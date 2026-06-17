@@ -14,8 +14,9 @@ this doc is the working overview. See [Implementation status](#implementation-st
 
 **Decisions locked (see ADRs):** Rust CLI ([0001](adr/0001-use-rust-for-the-cli.md)) ·
 functional core / imperative shell ([0002](adr/0002-functional-core-imperative-shell.md)) ·
-hybrid git backend, gix local-read + system `git` for all network/merge-tree
-([0003](adr/0003-git-backend-hybrid.md)) · FISMA-High *aligned*, not certified
+git backend: system `git` for reads **and** network, core stays pure
+([0003](adr/0003-git-backend-hybrid.md) superseded by [0010](adr/0010-system-git-for-local-reads.md)) ·
+FISMA-High *aligned*, not certified
 ([0004](adr/0004-fisma-high-aligned-not-certified.md)) · FIPS **Path A** (enforce approved
 algorithms, fail-closed) now, validated module deferred to a certified platform/container
 ([0005](adr/0005-fips-crypto-path-a-enforce-approved-algorithms.md)) · current- and
@@ -46,9 +47,8 @@ Workspace: `crates/{core,io,cli}` (ADR-0002), `#![forbid(unsafe_code)]` througho
 FIPS-enforced path; integration tests (`assert_cmd`); `kani` proof job; CI supply-chain
 gates (`cargo-deny`/`audit`/`vet`, SBOM); `--json` output; colorized cells.
 
-**Known deviation:** local reads currently shell out to system `git`, not `gix` as
-ADR-0003 specifies — needs a gix swap or an ADR-0003 update (tracked in the
-[implementation journal](journal/2026-06-17-first-implementation.md)).
+_(The earlier gix/ADR-0003 deviation is resolved — [ADR-0010](adr/0010-system-git-for-local-reads.md)
+adopts system `git` for reads too; the code already matches.)_
 
 ---
 
@@ -116,12 +116,13 @@ property. What we *do* is adopt the High-baseline *engineering practices*:
 | **AC** (access) | least privilege: only configured repos; never auto-commit; explicit remotes only |
 | **SC-13** (FIPS crypto) | **Path A** ([ADR-0005](adr/0005-fips-crypto-path-a-enforce-approved-algorithms.md)): enforce FIPS-approved SSH algorithms + fail-closed now; validated module deferred to a certified platform/container. Arch cannot ship a validated module (rolling release vs CMVP freeze). |
 
-**Backend decision ([ADR-0003](adr/0003-git-backend-hybrid.md)):** **hybrid split by the
-network boundary** — `gix` (pure Rust) for **local reads only** (it never touches the
-network), and **system `git`** for everything that crosses the wire (`fetch`, `push`) plus
-`git merge-tree` conflict detection. This keeps the bulk of the code memory-safe with no C
-in the trust base, and funnels **all transport crypto through one chokepoint** (OS
-OpenSSH), which is exactly what Path A enforces and audits.
+**Backend decision ([ADR-0010](adr/0010-system-git-for-local-reads.md), superseding
+[0003](adr/0003-git-backend-hybrid.md)):** use **system `git` for both local reads and
+network ops** (`fetch`/`push` + `merge-tree`). Since `git` ≥ 2.38 is already mandatory,
+this adds zero supply-chain surface, matches the user's exact git config, and keeps one
+code path. No C in the trust base (`git2`/libgit2 still rejected), the pure `core` parses
+all read output (ADR-0002), and **all transport crypto still funnels through one
+chokepoint** (`fetch`/`push` only) — exactly what Path A enforces and audits.
 
 No telemetry. No network access except the explicit, user-invoked push.
 

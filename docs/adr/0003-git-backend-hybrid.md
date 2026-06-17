@@ -1,7 +1,11 @@
 # ADR-0003: Git backend — hybrid (gix local read + system `git` for network)
-- Status: Accepted
+- Status: Superseded by [ADR-0010](0010-system-git-for-local-reads.md)
 - Date: 2026-06-17
 - Deciders: Ryan
+
+> **Superseded:** the gix-for-local-reads part was reversed — system `git` is used for
+> reads too (see [ADR-0010](0010-system-git-for-local-reads.md)). The rest of this ADR's
+> reasoning (reject `git2`/libgit2; single network chokepoint) still stands.
 
 ## Context
 Three backends were weighed:

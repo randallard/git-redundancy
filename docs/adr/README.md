@@ -50,10 +50,11 @@ where a decision touches a control we cite the 800-53 family inline.)
 | [0000](0000-record-architecture-decisions.md) | Record architecture decisions (use ADRs) | Accepted |
 | [0001](0001-use-rust-for-the-cli.md) | Use Rust for the CLI | Accepted |
 | [0002](0002-functional-core-imperative-shell.md) | Functional core / imperative shell | Accepted |
-| [0003](0003-git-backend-hybrid.md) | Git backend: hybrid (gix local read + system `git` for network) | Accepted |
+| [0003](0003-git-backend-hybrid.md) | Git backend: hybrid (gix local read + system `git` for network) | Superseded by 0010 |
 | [0004](0004-fisma-high-aligned-not-certified.md) | FISMA-High–aligned practices, not a certification claim | Accepted |
 | [0005](0005-fips-crypto-path-a-enforce-approved-algorithms.md) | FIPS crypto: enforce approved algorithms now (Path A) | Accepted |
 | [0006](0006-command-scope-current-and-all-branches.md) | Command scope: current-branch and all-branches views; never auto-commit | Accepted |
 | [0007](0007-future-gui-tauri-keep-rust-core.md) | Future GUI via Tauri, keep the Rust core | Proposed |
 | [0008](0008-os-omarchy-on-both-ends.md) | Target OS is Omarchy (Arch-based) on both ends | Accepted |
 | [0009](0009-ssh-transport-aliases-mdns-hostkey-pinned.md) | SSH transport via host aliases (mDNS, host-key pinned, FIPS enforced here) | Accepted |
+| [0010](0010-system-git-for-local-reads.md) | System `git` for local reads too (supersedes 0003) | Accepted |

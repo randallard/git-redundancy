@@ -1,0 +1,59 @@
+# Architecture Decision Records (ADRs)
+
+This directory records the significant decisions for **git-redundancy**, one file per
+decision, with the context and consequences — so the *why* survives, not just the *what*.
+
+## What this is (and the "DAC?" question)
+
+The recognized practice is the **ADR — Architecture Decision Record**, introduced by
+Michael Nygard (2011). The lightweight Markdown template many teams use is **MADR**
+(Markdown Any Decision Records). We use a MADR-lite form below.
+
+> Note: **"DAC" is something else** — *Discretionary Access Control*, an access-control
+> model (owner decides permissions), not a decision-documentation format. The thing you
+> wanted is an **ADR**.
+
+There is no single government-mandated format for engineering decisions; ADR/MADR is the
+de-facto industry standard. (For *security control* decisions specifically, NIST RMF uses
+artifacts like the SSP and POA&M — heavier, system-level. ADRs are the right grain here;
+where a decision touches a control we cite the 800-53 family inline.)
+
+## Conventions
+
+- Files: `NNNN-kebab-title.md`, zero-padded, monotonically increasing.
+- **Immutable in substance:** to change a decision, write a *new* ADR that supersedes the
+  old one and flip the old one's status to `Superseded by ADR-XXXX`. Don't rewrite history.
+- Status values: `Proposed` · `Accepted` · `Superseded` · `Deprecated`.
+
+## Template
+
+```markdown
+# ADR-NNNN: <title>
+- Status: Proposed | Accepted | Superseded by ADR-XXXX
+- Date: YYYY-MM-DD
+- Deciders: <names>
+
+## Context
+<forces at play, constraints, what makes this non-obvious>
+
+## Decision
+<what we chose, stated plainly>
+
+## Consequences
+<results, good and bad; what this commits us to>
+```
+
+## Index
+
+| ADR | Title | Status |
+|-----|-------|--------|
+| [0000](0000-record-architecture-decisions.md) | Record architecture decisions (use ADRs) | Accepted |
+| [0001](0001-use-rust-for-the-cli.md) | Use Rust for the CLI | Accepted |
+| [0002](0002-functional-core-imperative-shell.md) | Functional core / imperative shell | Accepted |
+| [0003](0003-git-backend-hybrid.md) | Git backend: hybrid (gix local read + system `git` for network) | Accepted |
+| [0004](0004-fisma-high-aligned-not-certified.md) | FISMA-High–aligned practices, not a certification claim | Accepted |
+| [0005](0005-fips-crypto-path-a-enforce-approved-algorithms.md) | FIPS crypto: enforce approved algorithms now (Path A) | Accepted |
+| [0006](0006-command-scope-current-and-all-branches.md) | Command scope: current-branch and all-branches views; never auto-commit | Accepted |
+| [0007](0007-future-gui-tauri-keep-rust-core.md) | Future GUI via Tauri, keep the Rust core | Proposed |
+| [0008](0008-os-omarchy-on-both-ends.md) | Target OS is Omarchy (Arch-based) on both ends | Accepted |
+| [0009](0009-ssh-transport-aliases-mdns-hostkey-pinned.md) | SSH transport via host aliases (mDNS, host-key pinned, FIPS enforced here) | Accepted |

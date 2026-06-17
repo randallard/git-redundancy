@@ -1,0 +1,15 @@
+[workspace]
+resolver = "2"
+members = ["crates/core", "crates/io", "crates/cli"]
+
+[workspace.package]
+edition = "2021"
+version = "0.0.0"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/randallard/git-redundancy"
+
+[workspace.dependencies]
+git-redundancy-core = { path = "crates/core" }
+git-redundancy-io = { path = "crates/io" }
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }

@@ -7,9 +7,10 @@
 > Companion to `infra-notes/GIT_REPOS_PLAN.md`, which documents the bare-repo server,
 > the `data` (Tailscale) / `data-lan` (LAN) remotes, and the server-side bundle backups.
 
-**Status:** planning / design. No code yet. Core decisions are made and recorded as ADRs
-in [`docs/adr/`](adr/README.md) — read those for the authoritative *why*; this doc is the
-working overview.
+**Status:** first working increment implemented & tested. `gr status` and `gr push` work
+end-to-end (with audit logging); not yet wired to the live tenx SSH aliases. Decisions are
+recorded as ADRs in [`docs/adr/`](adr/README.md) — read those for the authoritative *why*;
+this doc is the working overview. See [Implementation status](#implementation-status) below.
 
 **Decisions locked (see ADRs):** Rust CLI ([0001](adr/0001-use-rust-for-the-cli.md)) ·
 functional core / imperative shell ([0002](adr/0002-functional-core-imperative-shell.md)) ·
@@ -22,8 +23,28 @@ all-branches views, never auto-commit ([0006](adr/0006-command-scope-current-and
 GUI later via Tauri, keep the Rust core ([0007](adr/0007-future-gui-tauri-keep-rust-core.md)).
 OS is Omarchy on both client and server ([0008](adr/0008-os-omarchy-on-both-ends.md)).
 
-**Repo:** `git@github.com:randallard/git-redundancy.git` (not yet cloned locally). Name is
-settled as `git-redundancy` to match the repo.
+**Repo:** `git@github.com:randallard/git-redundancy.git` — cloned, initial commit `d6b11d7`
+(docs), branch `main`. Name settled as `git-redundancy`.
+
+## Implementation status
+
+Workspace: `crates/{core,io,cli}` (ADR-0002), `#![forbid(unsafe_code)]` throughout.
+
+**Built & tested:**
+- `git-redundancy-core` — `WorkingTree`/`AheadBehind`, `BranchSync` classification +
+  `is_easy_push`, porcelain-v2 parser, pure RFC3339 UTC formatter. Unit + `proptest`.
+- `git-redundancy-io` — config (config-first), discovery, system-`git` local reads
+  (branch/status/remotes/ahead-behind/`merge-tree`), `git push`, append-only audit log.
+- `gr status` — table with per-remote `↑/↓`/`new`/`diverged`/`CONFLICT`, `--remote`,
+  `-a/--all-branches`.
+- `gr push` — easy-only (ff/new), never force, never auto-commit, diverged/behind skipped,
+  dirty surfaced; transport failover (LAN→Tailscale); `--remote`/`--only`/`--dry-run`/
+  `--tags`; audit-logged (ADR-0004 AU).
+- Gates green: build, `clippy -D warnings`, `cargo test` (17 tests).
+
+**Not yet:** live SSH aliases + host-key pin (ADR-0009) so push reaches tenx over the
+FIPS-enforced path; integration tests (`assert_cmd`); `kani` proof job; CI supply-chain
+gates (`cargo-deny`/`audit`/`vet`, SBOM); `--json` output; colorized cells.
 
 ---
 
@@ -184,18 +205,18 @@ automatically — but the **roots themselves are always explicit**.
 
 ## 6. Testing strategy ("just Rust", good coverage)
 
-- **Unit + `proptest`** on `git-redundancy-core`: ahead/behind classification, "easy push"
-  decision, porcelain v2 parser, merge-state mapping. Property invariants (e.g. "easy ⇒
-  not diverged", "parser round-trips", "never panics").
-- **`kani`** (CI job, can be slow) on the pure classifiers: prove no-panic + key
+- ✅ **Unit + `proptest`** on `git-redundancy-core`: ahead/behind classification, "easy push"
+  decision, porcelain v2 parser, UTC formatter. Invariants in place (e.g. "easy ⇒ not
+  behind", "parser never panics", known-instant timestamps). Plus io unit tests (config,
+  audit append).
+- ⬜ **`kani`** (CI job, can be slow) on the pure classifiers: prove no-panic + key
   invariants for all bounded inputs.
-- **Integration** with `assert_cmd` + `tempfile`: build real fixture repos (via `gix` or
-  `git`), run the actual binary, assert table/JSON output and push behavior (incl.
-  diverged-skip, dirty-warn, new-branch).
-- **Coverage** via `cargo-llvm-cov`, gate in CI (target ≥ 85% on `core`, lower bar on
-  `io`).
-- **Supply chain / quality gates** in CI: `cargo deny`, `cargo audit`, `clippy -D
-  warnings`, `fmt --check`, `cargo vet`.
+- ⬜ **Integration** with `assert_cmd` + `tempfile`: build real fixture repos, run the
+  actual binary, assert table/JSON output and push behavior (incl. diverged-skip,
+  dirty-warn, new-branch). *(Exercised by hand so far — not yet codified.)*
+- ⬜ **Coverage** via `cargo-llvm-cov`, gate in CI (target ≥ 85% on `core`, lower bar on `io`).
+- ⬜ **Supply chain / quality gates** in CI: `cargo deny`, `cargo audit`, `clippy -D
+  warnings` (already clean locally), `fmt --check`, `cargo vet`.
 
 ---
 

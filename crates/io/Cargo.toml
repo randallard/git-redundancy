@@ -1,0 +1,13 @@
+[package]
+name = "git-redundancy-io"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Imperative shell for git-redundancy: config, repo discovery, system-git invocation."
+
+[dependencies]
+git-redundancy-core.workspace = true
+anyhow.workspace = true
+serde.workspace = true
+toml = "0.8"

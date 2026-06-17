@@ -1,0 +1,18 @@
+[package]
+name = "git-redundancy"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Multi-repo status + push CLI: keep working copies backed up to their bare home remotes."
+
+[[bin]]
+name = "gr"
+path = "src/main.rs"
+
+[dependencies]
+git-redundancy-core.workspace = true
+git-redundancy-io.workspace = true
+anyhow.workspace = true
+clap = { version = "4", features = ["derive"] }
+tabled = "0.16"

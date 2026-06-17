@@ -1,0 +1,12 @@
+[package]
+name = "git-redundancy-core"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Pure domain logic for git-redundancy (no IO): state types, working-tree parsing, sync classification."
+
+[dependencies]
+
+[dev-dependencies]
+proptest = "1"

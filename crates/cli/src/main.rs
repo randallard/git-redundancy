@@ -39,6 +39,9 @@ struct StatusArgs {
     /// Limit the table to a single remote.
     #[arg(long)]
     remote: Option<String>,
+    /// Disable colored output (also auto-disabled when not a TTY or NO_COLOR is set).
+    #[arg(long)]
+    no_color: bool,
 }
 
 #[derive(clap::Args)]
@@ -67,6 +70,7 @@ fn main() -> Result<()> {
         None => run_status(&StatusArgs {
             all_branches: false,
             remote: None,
+            no_color: false,
         }),
         Some(Command::Status(args)) => run_status(&args),
         Some(Command::Push(args)) => push::run_push(&args),
@@ -136,8 +140,29 @@ fn run_status(args: &StatusArgs) -> Result<()> {
         }
     }
 
-    println!("{}", render::table(&shown_remotes, &rows));
+    println!(
+        "{}",
+        render::table(&shown_remotes, &rows, color_enabled(args.no_color))
+    );
     Ok(())
+}
+
+/// Color is on for a TTY unless `--no-color` or `NO_COLOR` is set; `CLICOLOR_FORCE`
+/// forces it on (handy for piping into a pager).
+fn color_enabled(no_color: bool) -> bool {
+    use std::io::IsTerminal;
+    if no_color {
+        return false;
+    }
+    if let Some(v) = std::env::var_os("CLICOLOR_FORCE") {
+        if v.to_string_lossy() != "0" {
+            return true;
+        }
+    }
+    if std::env::var_os("NO_COLOR").is_some() {
+        return false;
+    }
+    std::io::stdout().is_terminal()
 }
 
 /// Compute one remote cell for a (repo, branch, remote).

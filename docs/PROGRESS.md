@@ -44,8 +44,8 @@ Workspace: `crates/{core,io,cli}` (ADR-0002), `#![forbid(unsafe_code)]` througho
 - Gates green: build, `clippy -D warnings`, `cargo test` (17 tests).
 
 **Not yet:** the **first real `gr push` to tenx** (transport wired + verified; push queued);
-`--json` output; colorized cells; CI extras (`cargo-vet`, SBOM, coverage gate); *mandatory*
-FIPS (tenx-side `sshd`/crypto-policy — the deferred tier).
+`--json` output; CI extras (`cargo-vet`, SBOM, coverage gate); *mandatory* FIPS (tenx-side
+`sshd`/crypto-policy — the deferred tier).
 
 **Done since:** integration tests (`assert_cmd`, 8 hermetic cases); `kani` proofs written
 **and verified green** (3/3); gix/ADR-0003 deviation reconciled ([ADR-0010](adr/0010-system-git-for-local-reads.md));

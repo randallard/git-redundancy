@@ -44,11 +44,13 @@ Workspace: `crates/{core,io,cli}` (ADR-0002), `#![forbid(unsafe_code)]` througho
 - Gates green: build, `clippy -D warnings`, `cargo test` (17 tests).
 
 **Not yet:** live SSH aliases + host-key pin (ADR-0009) so push reaches tenx over the
-FIPS-enforced path; CI workflows (per [ADR-0011](adr/0011-ci-fast-gates-plus-kani-every-push.md):
-fast gates always + Kani on every push, cached, separate job); `--json` output; colorized cells.
+FIPS-enforced path; `--json` output; colorized cells; CI extras (`cargo-vet`, SBOM,
+coverage gate).
 
 **Done since:** integration tests (`assert_cmd`, 8 hermetic cases); `kani` proofs written
-**and verified green** (3/3); gix/ADR-0003 deviation reconciled ([ADR-0010](adr/0010-system-git-for-local-reads.md)).
+**and verified green** (3/3); gix/ADR-0003 deviation reconciled ([ADR-0010](adr/0010-system-git-for-local-reads.md));
+**CI workflows** added per [ADR-0011](adr/0011-ci-fast-gates-plus-kani-every-push.md)
+(`.github/workflows/ci.yml` + `deny.toml`; validated locally — first GitHub run pending).
 
 _(The earlier gix/ADR-0003 deviation is resolved — [ADR-0010](adr/0010-system-git-for-local-reads.md)
 adopts system `git` for reads too; the code already matches.)_
@@ -224,12 +226,13 @@ automatically — but the **roots themselves are always explicit**.
   target — `format!` is too costly to model-check; proptest-covered instead.) Requires
   `rustup`, not the Arch `rust` package (see [TROUBLESHOOTING](TROUBLESHOOTING.md)); CI runs
   it per [ADR-0011](adr/0011-ci-fast-gates-plus-kani-every-push.md).
-- ⬜ **Integration** with `assert_cmd` + `tempfile`: build real fixture repos, run the
-  actual binary, assert table/JSON output and push behavior (incl. diverged-skip,
-  dirty-warn, new-branch). *(Exercised by hand so far — not yet codified.)*
-- ⬜ **Coverage** via `cargo-llvm-cov`, gate in CI (target ≥ 85% on `core`, lower bar on `io`).
-- ⬜ **Supply chain / quality gates** in CI: `cargo deny`, `cargo audit`, `clippy -D
-  warnings` (already clean locally), `fmt --check`, `cargo vet`.
+- ✅ **Integration** with `assert_cmd` + `tempfile`: 8 hermetic cases run the actual binary
+  and assert push/status behavior (new-branch, dry-run, fast-forward, up-to-date, failover,
+  diverged-skip, dirty-warn, non-zero exit on failure).
+- ✅ **CI quality + supply-chain gates** (`.github/workflows/ci.yml`, ADR-0011): `fmt
+  --check`, `clippy -D warnings`, `cargo test`, and `cargo-deny` (licenses/bans/sources/
+  advisories) on every push; Kani in a separate cached job. *(First GitHub run pending.)*
+- ⬜ Still open: `cargo-vet`, SBOM, and a `cargo-llvm-cov` coverage gate.
 
 ---
 

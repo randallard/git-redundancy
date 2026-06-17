@@ -46,6 +46,10 @@ Workspace: `crates/{core,io,cli}` (ADR-0002), `#![forbid(unsafe_code)]` througho
 FIPS-enforced path; integration tests (`assert_cmd`); `kani` proof job; CI supply-chain
 gates (`cargo-deny`/`audit`/`vet`, SBOM); `--json` output; colorized cells.
 
+**Known deviation:** local reads currently shell out to system `git`, not `gix` as
+ADR-0003 specifies — needs a gix swap or an ADR-0003 update (tracked in the
+[implementation journal](journal/2026-06-17-first-implementation.md)).
+
 ---
 
 ## 1. Goal

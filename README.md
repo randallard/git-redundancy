@@ -96,14 +96,14 @@ To reach a home server over a FIPS-enforced SSH transport, wire up the host alia
 
 ```console
 $ gr status
-╭──────────────────┬──────────────────────┬───┬───┬───┬────┬──────────┬──────╮
-│ Repo             │ Branch               │ S │ U │ ? │ Cf │ data-lan │ data │
-├──────────────────┼──────────────────────┼───┼───┼───┼────┼──────────┼──────┤
-│ infra-notes   │ * main               │ · │ · │ · │ ·  │ ↑1       │ ↑1   │
-│ api-server     │ * release-1.9     │ · │ · │ · │ ·  │ ↑2       │ ↑2   │
-│ local-notes │ * master             │ · │ 3 │ 4 │ ·  │ ok       │ ok   │
-│ web-frontend    │ * web-release-1.9 │ · │ · │ · │ ·  │ ↑2       │ ↑2   │
-╰──────────────────┴──────────────────────┴───┴───┴───┴────┴──────────┴──────╯
+╭──────────────┬───────────────────┬───┬───┬───┬────┬──────────┬──────╮
+│ Repo         │ Branch            │ S │ U │ ? │ Cf │ data-lan │ data │
+├──────────────┼───────────────────┼───┼───┼───┼────┼──────────┼──────┤
+│ api-server   │ * release-1.9     │ · │ · │ · │ ·  │ ↑2       │ ↑2   │
+│ infra-notes  │ * main            │ · │ · │ · │ ·  │ ↑1       │ ↑1   │
+│ local-notes  │ * master          │ · │ 3 │ 4 │ ·  │ ok       │ ok   │
+│ web-frontend │ * web-release-1.9 │ · │ · │ · │ ·  │ ↑2       │ ↑2   │
+╰──────────────┴───────────────────┴───┴───┴───┴────┴──────────┴──────╯
 ```
 
 Columns: **S/U/?/Cf** = staged / unstaged / untracked / conflicts (`·` = none);
@@ -118,11 +118,11 @@ Pushes easy, committed work home with LAN→Tailscale failover:
 
 ```console
 $ gr push
-  api-server       release-1.9         data-lan  pushed (↑2)
-  web-frontend      web-release-1.9     data-lan  pushed (↑2)
-  infra-notes     main                   data-lan  pushed (↑1)
-  local-notes   master                 data-lan  up-to-date
+  api-server         release-1.9            data-lan  pushed (↑2)
+  infra-notes        main                   data-lan  pushed (↑1)
+  local-notes        master                 data-lan  up-to-date
   ⚠ local-notes: 3 unstaged, 4 untracked — NOT backed up (commit to include)
+  web-frontend       web-release-1.9        data-lan  pushed (↑2)
 
 3 pushed · 1 up-to-date · 0 skipped · 0 failed · 1 dirty
 audit log: ~/.local/state/git-redundancy/audit.log

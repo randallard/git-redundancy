@@ -78,17 +78,40 @@ pub fn run_push(args: &PushArgs) -> Result<()> {
             current.clone().into_iter().collect()
         };
         if branches.is_empty() {
-            line(&name, "(detached)", "—", "no branch to push (detached HEAD)");
+            line(
+                &name,
+                "(detached)",
+                "—",
+                "no branch to push (detached HEAD)",
+            );
             tally.skipped += 1;
             continue;
         }
 
         for branch in &branches {
             if failover {
-                decide_and_push(repo, &name, branch, &candidates[0], &candidates, args, &audit, &mut tally)?;
+                decide_and_push(
+                    repo,
+                    &name,
+                    branch,
+                    &candidates[0],
+                    &candidates,
+                    args,
+                    &audit,
+                    &mut tally,
+                )?;
             } else {
                 for r in &candidates {
-                    decide_and_push(repo, &name, branch, r, std::slice::from_ref(r), args, &audit, &mut tally)?;
+                    decide_and_push(
+                        repo,
+                        &name,
+                        branch,
+                        r,
+                        std::slice::from_ref(r),
+                        args,
+                        &audit,
+                        &mut tally,
+                    )?;
                 }
             }
         }
@@ -158,19 +181,40 @@ fn decide_and_push(
         }
         BranchSync::Behind(n) => {
             let detail = format!("behind {n}");
-            line(name, branch, refr, &format!("SKIPPED: {detail} (pull first)"));
+            line(
+                name,
+                branch,
+                refr,
+                &format!("SKIPPED: {detail} (pull first)"),
+            );
             audit_log(audit, args, name, branch, refr, "skipped", &detail);
             tally.skipped += 1;
         }
-        BranchSync::Diverged { ahead, behind, conflict } => {
-            let why = if conflict { "diverged + CONFLICT" } else { "diverged" };
+        BranchSync::Diverged {
+            ahead,
+            behind,
+            conflict,
+        } => {
+            let why = if conflict {
+                "diverged + CONFLICT"
+            } else {
+                "diverged"
+            };
             line(
                 name,
                 branch,
                 refr,
                 &format!("SKIPPED: {why} (↑{ahead} ↓{behind}; never forced)"),
             );
-            audit_log(audit, args, name, branch, refr, "skipped", &format!("{why} ↑{ahead} ↓{behind}"));
+            audit_log(
+                audit,
+                args,
+                name,
+                branch,
+                refr,
+                "skipped",
+                &format!("{why} ↑{ahead} ↓{behind}"),
+            );
             tally.skipped += 1;
         }
         easy @ (BranchSync::NoRemoteBranch | BranchSync::Ahead(_)) => {
@@ -194,7 +238,15 @@ fn decide_and_push(
             }
             if !done {
                 line(name, branch, refr, &format!("FAILED ({what}): {last_err}"));
-                audit_log(audit, args, name, branch, refr, "failed", &format!("{what}: {last_err}"));
+                audit_log(
+                    audit,
+                    args,
+                    name,
+                    branch,
+                    refr,
+                    "failed",
+                    &format!("{what}: {last_err}"),
+                );
                 tally.failed += 1;
             }
         }

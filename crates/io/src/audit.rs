@@ -119,13 +119,19 @@ mod tests {
         cfg.audit.log = Some(log.clone());
         let audit = Audit::from_config(&cfg);
 
-        audit.record("myrepo", "main", "data-lan", "pushed", "↑2").unwrap();
-        audit.record("myrepo", "main", "data-lan", "skipped", "diverged").unwrap();
+        audit
+            .record("myrepo", "main", "data-lan", "pushed", "↑2")
+            .unwrap();
+        audit
+            .record("myrepo", "main", "data-lan", "skipped", "diverged")
+            .unwrap();
 
         let contents = std::fs::read_to_string(&log).unwrap();
         let lines: Vec<&str> = contents.lines().collect();
         assert_eq!(lines.len(), 2);
-        assert!(lines[0].contains("action=push repo=myrepo branch=main remote=data-lan result=pushed"));
+        assert!(
+            lines[0].contains("action=push repo=myrepo branch=main remote=data-lan result=pushed")
+        );
         assert!(lines[0].ends_with("detail=\"↑2\""));
         assert!(lines[0].contains('T') && lines[0].contains('Z'));
         assert!(lines[1].contains("result=skipped"));

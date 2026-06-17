@@ -55,8 +55,14 @@ impl Fixture {
         fx.write("a.txt", "one\ntwo\nthree\n");
         fx.git(&fx.workrepo, &["add", "a.txt"]);
         fx.git(&fx.workrepo, &["commit", "-m", "c1"]);
-        fx.git(&fx.workrepo, &["remote", "add", "data-lan", fx.bare.to_str().unwrap()]);
-        fx.git(&fx.workrepo, &["remote", "add", "data", fx.bare.to_str().unwrap()]);
+        fx.git(
+            &fx.workrepo,
+            &["remote", "add", "data-lan", fx.bare.to_str().unwrap()],
+        );
+        fx.git(
+            &fx.workrepo,
+            &["remote", "add", "data", fx.bare.to_str().unwrap()],
+        );
 
         fx.write_config(&format!(
             "roots = [\"{}\"]\n[transport]\norder = [\"data-lan\", \"data\"]\n",
@@ -91,7 +97,14 @@ impl Fixture {
             .env("GIT_CONFIG_GLOBAL", "/dev/null")
             .env("GIT_CONFIG_SYSTEM", "/dev/null")
             .env("GIT_CONFIG_NOSYSTEM", "1")
-            .args(["-c", "user.email=t@example.com", "-c", "user.name=t", "-c", "init.defaultBranch=main"])
+            .args([
+                "-c",
+                "user.email=t@example.com",
+                "-c",
+                "user.name=t",
+                "-c",
+                "init.defaultBranch=main",
+            ])
             .args(args)
             .output()
             .expect("spawn git");
@@ -150,9 +163,15 @@ fn dry_run_changes_nothing_and_is_not_audited() {
         .stdout(predicate::str::contains("would push (new)"));
     // No remote update...
     let refs = fx.git(&fx.workrepo, &["for-each-ref", "refs/remotes"]);
-    assert!(refs.trim().is_empty(), "dry-run must not create tracking refs");
+    assert!(
+        refs.trim().is_empty(),
+        "dry-run must not create tracking refs"
+    );
     // ...and no audit record.
-    assert!(!fx.audit_log().exists(), "dry-run must not write the audit log");
+    assert!(
+        !fx.audit_log().exists(),
+        "dry-run must not write the audit log"
+    );
 }
 
 #[test]
@@ -208,7 +227,10 @@ fn push_skips_diverged_conflict_without_failing() {
 
     // A second clone advances the remote with a conflicting edit.
     let clone2 = fx.root.join("clone2");
-    fx.git(&fx.root, &["clone", fx.bare.to_str().unwrap(), clone2.to_str().unwrap()]);
+    fx.git(
+        &fx.root,
+        &["clone", fx.bare.to_str().unwrap(), clone2.to_str().unwrap()],
+    );
     std::fs::write(clone2.join("a.txt"), "one\ntwo\nCLONE2\n").unwrap();
     fx.git(&clone2, &["commit", "-am", "c_clone"]);
     fx.git(&clone2, &["push", "origin", "main"]);
@@ -241,14 +263,9 @@ fn dirty_tree_is_warned_and_not_pushed() {
     fx.write("a.txt", "one\ntwo\nthree\nlocal-edit\n");
     fx.write("scratch.txt", "junk");
 
-    fx.gr()
-        .arg("push")
-        .assert()
-        .success()
-        .stdout(
-            predicate::str::contains("up-to-date")
-                .and(predicate::str::contains("NOT backed up")),
-        );
+    fx.gr().arg("push").assert().success().stdout(
+        predicate::str::contains("up-to-date").and(predicate::str::contains("NOT backed up")),
+    );
 }
 
 #[test]
@@ -256,8 +273,14 @@ fn push_failure_exits_nonzero() {
     let fx = Fixture::new();
     // Point both remotes at a path that doesn't exist.
     let nope = fx.root.join("nope.git");
-    fx.git(&fx.workrepo, &["remote", "set-url", "data-lan", nope.to_str().unwrap()]);
-    fx.git(&fx.workrepo, &["remote", "set-url", "data", nope.to_str().unwrap()]);
+    fx.git(
+        &fx.workrepo,
+        &["remote", "set-url", "data-lan", nope.to_str().unwrap()],
+    );
+    fx.git(
+        &fx.workrepo,
+        &["remote", "set-url", "data", nope.to_str().unwrap()],
+    );
 
     fx.gr()
         .arg("push")

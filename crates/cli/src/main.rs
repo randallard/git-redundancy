@@ -13,7 +13,11 @@ use std::collections::BTreeSet;
 use std::path::Path;
 
 #[derive(Parser)]
-#[command(name = "gr", version, about = "git-redundancy: multi-repo status + push")]
+#[command(
+    name = "gr",
+    version,
+    about = "git-redundancy: multi-repo status + push"
+)]
 struct Cli {
     #[command(subcommand)]
     command: Option<Command>,
@@ -60,7 +64,10 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
         // Default command (no subcommand) is `status`.
-        None => run_status(&StatusArgs { all_branches: false, remote: None }),
+        None => run_status(&StatusArgs {
+            all_branches: false,
+            remote: None,
+        }),
         Some(Command::Status(args)) => run_status(&args),
         Some(Command::Push(args)) => push::run_push(&args),
     }
@@ -147,7 +154,11 @@ fn sync_cell(
 }
 
 /// Decide which remote columns to render.
-fn shown_remotes(args: &StatusArgs, cfg: &Config, repos: &[std::path::PathBuf]) -> Result<Vec<String>> {
+fn shown_remotes(
+    args: &StatusArgs,
+    cfg: &Config,
+    repos: &[std::path::PathBuf],
+) -> Result<Vec<String>> {
     if let Some(r) = &args.remote {
         return Ok(vec![r.clone()]);
     }

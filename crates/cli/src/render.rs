@@ -20,7 +20,13 @@ fn wt_cell(wt: Option<WorkingTree>) -> (String, String, String, String) {
     match wt {
         None => (String::new(), String::new(), String::new(), String::new()),
         Some(w) => {
-            let f = |n: u32| if n == 0 { "·".to_string() } else { n.to_string() };
+            let f = |n: u32| {
+                if n == 0 {
+                    "·".to_string()
+                } else {
+                    n.to_string()
+                }
+            };
             (f(w.staged), f(w.unstaged), f(w.untracked), f(w.conflicts))
         }
     }
@@ -33,7 +39,11 @@ fn remote_cell(sync: &Option<BranchSync>) -> String {
         Some(BranchSync::UpToDate) => "ok".to_string(),
         Some(BranchSync::Ahead(n)) => format!("↑{n}"),
         Some(BranchSync::Behind(n)) => format!("↓{n}"),
-        Some(BranchSync::Diverged { ahead, behind, conflict }) => {
+        Some(BranchSync::Diverged {
+            ahead,
+            behind,
+            conflict,
+        }) => {
             let tag = if *conflict { "CONFLICT" } else { "diverged" };
             format!("↑{ahead}↓{behind} {tag}")
         }

@@ -33,7 +33,10 @@ pub struct AuditConfig {
 
 impl Default for AuditConfig {
     fn default() -> Self {
-        AuditConfig { enabled: true, log: None }
+        AuditConfig {
+            enabled: true,
+            log: None,
+        }
     }
 }
 
@@ -51,7 +54,10 @@ pub struct Transport {
 
 impl Default for Transport {
     fn default() -> Self {
-        Transport { auto: true, order: Vec::new() }
+        Transport {
+            auto: true,
+            order: Vec::new(),
+        }
     }
 }
 
@@ -74,12 +80,11 @@ impl Config {
 
     pub fn load_from(path: &Path) -> Result<Self> {
         match std::fs::read_to_string(path) {
-            Ok(s) => toml::from_str(&s)
-                .with_context(|| format!("parsing config at {}", path.display())),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Config::default()),
-            Err(e) => {
-                Err(e).with_context(|| format!("reading config at {}", path.display()))
+            Ok(s) => {
+                toml::from_str(&s).with_context(|| format!("parsing config at {}", path.display()))
             }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Config::default()),
+            Err(e) => Err(e).with_context(|| format!("reading config at {}", path.display())),
         }
     }
 

@@ -15,7 +15,11 @@ pub enum BranchSync {
     /// Local is behind only — a push would be rejected; you'd pull.
     Behind(u32),
     /// Histories diverged. `conflict` is the result of a trial merge (if known).
-    Diverged { ahead: u32, behind: u32, conflict: bool },
+    Diverged {
+        ahead: u32,
+        behind: u32,
+        conflict: bool,
+    },
 }
 
 impl BranchSync {
@@ -24,7 +28,10 @@ impl BranchSync {
     pub fn classify(ab: Option<AheadBehind>, diverged_conflict: Option<bool>) -> BranchSync {
         match ab {
             None => BranchSync::NoRemoteBranch,
-            Some(AheadBehind { ahead: 0, behind: 0 }) => BranchSync::UpToDate,
+            Some(AheadBehind {
+                ahead: 0,
+                behind: 0,
+            }) => BranchSync::UpToDate,
             Some(AheadBehind { ahead, behind: 0 }) => BranchSync::Ahead(ahead),
             Some(AheadBehind { ahead: 0, behind }) => BranchSync::Behind(behind),
             Some(AheadBehind { ahead, behind }) => BranchSync::Diverged {
@@ -52,7 +59,9 @@ impl BranchSync {
             BranchSync::UpToDate => "ok",
             BranchSync::Ahead(_) => "ff",
             BranchSync::Behind(_) => "behind",
-            BranchSync::Diverged { conflict: false, .. } => "diverged",
+            BranchSync::Diverged {
+                conflict: false, ..
+            } => "diverged",
             BranchSync::Diverged { conflict: true, .. } => "CONFLICT",
         }
     }
@@ -66,20 +75,48 @@ mod tests {
     fn classification_table() {
         assert_eq!(BranchSync::classify(None, None), BranchSync::NoRemoteBranch);
         assert_eq!(
-            BranchSync::classify(Some(AheadBehind { ahead: 0, behind: 0 }), None),
+            BranchSync::classify(
+                Some(AheadBehind {
+                    ahead: 0,
+                    behind: 0
+                }),
+                None
+            ),
             BranchSync::UpToDate
         );
         assert_eq!(
-            BranchSync::classify(Some(AheadBehind { ahead: 3, behind: 0 }), None),
+            BranchSync::classify(
+                Some(AheadBehind {
+                    ahead: 3,
+                    behind: 0
+                }),
+                None
+            ),
             BranchSync::Ahead(3)
         );
         assert_eq!(
-            BranchSync::classify(Some(AheadBehind { ahead: 0, behind: 2 }), None),
+            BranchSync::classify(
+                Some(AheadBehind {
+                    ahead: 0,
+                    behind: 2
+                }),
+                None
+            ),
             BranchSync::Behind(2)
         );
         assert_eq!(
-            BranchSync::classify(Some(AheadBehind { ahead: 1, behind: 1 }), Some(true)),
-            BranchSync::Diverged { ahead: 1, behind: 1, conflict: true }
+            BranchSync::classify(
+                Some(AheadBehind {
+                    ahead: 1,
+                    behind: 1
+                }),
+                Some(true)
+            ),
+            BranchSync::Diverged {
+                ahead: 1,
+                behind: 1,
+                conflict: true
+            }
         );
     }
 
@@ -89,7 +126,12 @@ mod tests {
         assert!(BranchSync::UpToDate.is_easy_push());
         assert!(BranchSync::Ahead(5).is_easy_push());
         assert!(!BranchSync::Behind(1).is_easy_push());
-        assert!(!BranchSync::Diverged { ahead: 1, behind: 1, conflict: false }.is_easy_push());
+        assert!(!BranchSync::Diverged {
+            ahead: 1,
+            behind: 1,
+            conflict: false
+        }
+        .is_easy_push());
     }
 
     proptest::proptest! {

@@ -43,14 +43,16 @@ Workspace: `crates/{core,io,cli}` (ADR-0002), `#![forbid(unsafe_code)]` througho
   `--tags`; audit-logged (ADR-0004 AU).
 - Gates green: build, `clippy -D warnings`, `cargo test` (17 tests).
 
-**Not yet:** live SSH aliases + host-key pin (ADR-0009) so push reaches tenx over the
-FIPS-enforced path; `--json` output; colorized cells; CI extras (`cargo-vet`, SBOM,
-coverage gate).
+**Not yet:** the **first real `gr push` to tenx** (transport wired + verified; push queued);
+`--json` output; colorized cells; CI extras (`cargo-vet`, SBOM, coverage gate); *mandatory*
+FIPS (tenx-side `sshd`/crypto-policy — the deferred tier).
 
 **Done since:** integration tests (`assert_cmd`, 8 hermetic cases); `kani` proofs written
 **and verified green** (3/3); gix/ADR-0003 deviation reconciled ([ADR-0010](adr/0010-system-git-for-local-reads.md));
-**CI workflows** added per [ADR-0011](adr/0011-ci-fast-gates-plus-kani-every-push.md)
-(`.github/workflows/ci.yml` + `deny.toml`; validated locally — first GitHub run pending).
+**CI live & green** per [ADR-0011](adr/0011-ci-fast-gates-plus-kani-every-push.md)
+(`.github/workflows/ci.yml` + `deny.toml`); **SSH transport wired & FIPS fail-closed
+verified** ([ADR-0009](adr/0009-ssh-transport-aliases-mdns-hostkey-pinned.md); steps in
+[SETUP.md](SETUP.md)).
 
 _(The earlier gix/ADR-0003 deviation is resolved — [ADR-0010](adr/0010-system-git-for-local-reads.md)
 adopts system `git` for reads too; the code already matches.)_

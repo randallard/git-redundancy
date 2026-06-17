@@ -10,6 +10,10 @@ pub mod model;
 pub mod status;
 pub mod timefmt;
 
+/// Kani proof harnesses — compiled only under `--cfg kani` (`cargo kani`).
+#[cfg(kani)]
+mod proofs;
+
 pub use classify::BranchSync;
 pub use model::{AheadBehind, WorkingTree};
 pub use status::parse_porcelain_v2_z;

@@ -59,3 +59,25 @@ the host answering isn't tenx (e.g. a foreign `192.168.1.x` device, or tenx was 
 
 **Fix:** confirm you're really talking to tenx, then update the pinned key in `known_hosts`
 only if the change is legitimate (e.g. tenx's OS was reinstalled).
+
+## `cargo kani setup` fails: `rustup toolchain install … No such file or directory`
+
+**Symptom:** running `cargo kani setup` gets through downloading the Kani bundle but dies at
+`[3/5] Installing rust toolchain …` with `Error: … rustup toolchain install
+nightly-…: No such file or directory`.
+
+**Cause:** **not a network/Zscaler issue** (the bundle at `[2/5]` already downloaded). Kani
+pins its own nightly toolchain and installs it *through `rustup`* — but on Arch with the
+pacman **`rust`** package there is no `rustup` binary, so the exec fails. Check:
+`command -v rustup` (NOT FOUND) and `pacman -Qo "$(command -v rustc)"` (owned by `rust`).
+
+**Fix:** switch from the `rust` package to `rustup` (they conflict; pacman swaps them), then
+re-run setup:
+```bash
+sudo pacman -S rustup      # accept replacing 'rust'
+rustup default stable      # install + select a default toolchain
+cargo kani setup           # now finds rustup; installs the pinned nightly
+cargo kani -p git-redundancy-core
+```
+Reversible with `sudo pacman -S rust`. No-sudo alternative: install rustup into `$HOME` via
+`https://sh.rustup.rs`, which shadows the pacman cargo through `~/.cargo/bin`.

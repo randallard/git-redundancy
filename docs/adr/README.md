@@ -58,3 +58,4 @@ where a decision touches a control we cite the 800-53 family inline.)
 | [0008](0008-os-omarchy-on-both-ends.md) | Target OS is Omarchy (Arch-based) on both ends | Accepted |
 | [0009](0009-ssh-transport-aliases-mdns-hostkey-pinned.md) | SSH transport via host aliases (mDNS, host-key pinned, FIPS enforced here) | Accepted |
 | [0010](0010-system-git-for-local-reads.md) | System `git` for local reads too (supersedes 0003) | Accepted |
+| [0011](0011-ci-fast-gates-plus-kani-every-push.md) | CI: fast gates always + Kani on every push (cached, separate job) | Accepted |

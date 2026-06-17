@@ -44,8 +44,11 @@ Workspace: `crates/{core,io,cli}` (ADR-0002), `#![forbid(unsafe_code)]` througho
 - Gates green: build, `clippy -D warnings`, `cargo test` (17 tests).
 
 **Not yet:** live SSH aliases + host-key pin (ADR-0009) so push reaches tenx over the
-FIPS-enforced path; integration tests (`assert_cmd`); `kani` proof job; CI supply-chain
-gates (`cargo-deny`/`audit`/`vet`, SBOM); `--json` output; colorized cells.
+FIPS-enforced path; CI workflows (per [ADR-0011](adr/0011-ci-fast-gates-plus-kani-every-push.md):
+fast gates always + Kani on every push, cached, separate job); `--json` output; colorized cells.
+
+**Done since:** integration tests (`assert_cmd`, 8 hermetic cases); `kani` proofs written
+**and verified green** (3/3); gix/ADR-0003 deviation reconciled ([ADR-0010](adr/0010-system-git-for-local-reads.md)).
 
 _(The earlier gix/ADR-0003 deviation is resolved — [ADR-0010](adr/0010-system-git-for-local-reads.md)
 adopts system `git` for reads too; the code already matches.)_
@@ -214,8 +217,13 @@ automatically — but the **roots themselves are always explicit**.
   decision, porcelain v2 parser, UTC formatter. Invariants in place (e.g. "easy ⇒ not
   behind", "parser never panics", known-instant timestamps). Plus io unit tests (config,
   audit append).
-- ⬜ **`kani`** (CI job, can be slow) on the pure classifiers: prove no-panic + key
-  invariants for all bounded inputs.
+- ✅ **`kani`** — 3 harnesses in `core/src/proofs.rs` (cfg-gated; no dep added) over the
+  integer decision logic: the **"easy push ⇒ behind == 0"** safety invariant, `classify`
+  totality, and the easy-push decision table. **Verified green** (`cargo kani -p
+  git-redundancy-core` → 3/3, 0 failures). (`rfc3339_utc` is deliberately *not* a Kani
+  target — `format!` is too costly to model-check; proptest-covered instead.) Requires
+  `rustup`, not the Arch `rust` package (see [TROUBLESHOOTING](TROUBLESHOOTING.md)); CI runs
+  it per [ADR-0011](adr/0011-ci-fast-gates-plus-kani-every-push.md).
 - ⬜ **Integration** with `assert_cmd` + `tempfile`: build real fixture repos, run the
   actual binary, assert table/JSON output and push behavior (incl. diverged-skip,
   dirty-warn, new-branch). *(Exercised by hand so far — not yet codified.)*

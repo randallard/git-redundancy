@@ -38,16 +38,11 @@ fn count(n: u32, code: &str, color: bool) -> String {
 
 fn wt_cells(wt: Option<WorkingTree>, color: bool) -> (String, String, String, String) {
     match wt {
-        None => (
-            String::new(),
-            String::new(),
-            String::new(),
-            String::new(),
-        ),
+        None => (String::new(), String::new(), String::new(), String::new()),
         Some(w) => (
-            count(w.staged, "32", color),    // green  — ready to commit
-            count(w.unstaged, "33", color),  // yellow — modified, not staged
-            count(w.untracked, "36", color), // cyan   — untracked
+            count(w.staged, "32", color),      // green  — ready to commit
+            count(w.unstaged, "33", color),    // yellow — modified, not staged
+            count(w.untracked, "36", color),   // cyan   — untracked
             count(w.conflicts, "1;31", color), // bold red — unmerged
         ),
     }

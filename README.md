@@ -157,6 +157,8 @@ SSH transport — which is where the optional FIPS enforcement lives.
 
 - [`docs/SETUP.md`](docs/SETUP.md) — wiring a machine to a home server (SSH aliases, host-key
   pinning, FIPS transport, repointing remotes).
+- [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) — running the gates locally: fmt, clippy,
+  tests, coverage (`cargo llvm-cov`), and the Kani proofs.
 - [`docs/PROGRESS.md`](docs/PROGRESS.md) — living design overview & status.
 - [`docs/adr/`](docs/adr/README.md) — Architecture Decision Records (the *why*).
 - [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md) — operational gotchas.

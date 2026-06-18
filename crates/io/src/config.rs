@@ -18,6 +18,8 @@ pub struct Config {
     pub default_remotes: Vec<String>,
     /// Push transport behavior (ADR-0009).
     pub transport: Transport,
+    /// Server-side bare-repo home inventory (ADR-0012).
+    pub server: Server,
     /// Audit logging (ADR-0004, AU).
     pub audit: AuditConfig,
 }
@@ -61,6 +63,20 @@ impl Default for Transport {
     }
 }
 
+/// Where the bare "home" repos live on the server, and how to reach them
+/// (ADR-0012). An empty `root` means server features are off — `gr` stays
+/// purely local. Home-only repos have no local remote to read connection
+/// details from, so the server coordinates live here, not only in git remotes.
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq, Default)]
+#[serde(default)]
+pub struct Server {
+    /// Bare-repo root on the server, e.g. `/data/git`. Empty = inventory disabled.
+    pub root: PathBuf,
+    /// SSH aliases to reach the server, tried in order (ADR-0009). Empty = derive
+    /// from the `transport.order` remotes of discovered repos.
+    pub aliases: Vec<String>,
+}
+
 impl Config {
     /// `$XDG_CONFIG_HOME/git-redundancy/config.toml`, falling back to `~/.config/...`.
     pub fn config_path() -> PathBuf {
@@ -92,6 +108,12 @@ impl Config {
     pub fn is_empty(&self) -> bool {
         self.roots.is_empty() && self.repos.is_empty()
     }
+
+    /// Is the server-side home inventory configured (ADR-0012)? False = `gr`
+    /// stays purely local.
+    pub fn server_enabled(&self) -> bool {
+        !self.server.root.as_os_str().is_empty()
+    }
 }
 
 #[cfg(test)]
@@ -115,5 +137,22 @@ mod tests {
         assert_eq!(cfg.roots, vec![PathBuf::from("/data/Development")]);
         assert_eq!(cfg.default_remotes, vec!["data-lan", "data"]);
         assert!(!cfg.is_empty());
+    }
+
+    #[test]
+    fn server_block_parses_and_toggles_inventory() {
+        let cfg: Config = Config::default();
+        assert!(!cfg.server_enabled());
+
+        let toml = r#"
+            roots = ["/data/Development"]
+            [server]
+            root = "/data/git"
+            aliases = ["tenx-lan", "tenx-ts"]
+        "#;
+        let cfg: Config = toml::from_str(toml).unwrap();
+        assert!(cfg.server_enabled());
+        assert_eq!(cfg.server.root, PathBuf::from("/data/git"));
+        assert_eq!(cfg.server.aliases, vec!["tenx-lan", "tenx-ts"]);
     }
 }

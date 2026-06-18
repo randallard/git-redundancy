@@ -46,7 +46,14 @@ Workspace: `crates/{core,io,cli}` (ADR-0002), `#![forbid(unsafe_code)]` througho
 - `gr push` — easy-only (ff/new), never force, never auto-commit, diverged/behind skipped,
   dirty surfaced; transport failover (LAN→Tailscale); `--remote`/`--only`/`--dry-run`/
   `--tags`; audit-logged (ADR-0004 AU).
-- Gates green: build, `clippy -D warnings`, `cargo test` (17 tests).
+- **Home inventory ([ADR-0012](adr/0012-home-inventory-server-side-bare-repos.md)):** pure
+  `core::presence` (home-name-from-URL identity, `LocalOnly`/`HomeOnly`/`Linked` join);
+  `io::inventory` (SSH `ls` over the ADR-0009 aliases + `git ls-remote`, graceful
+  degradation); `[server]` config block; `gr homes` surfaces it (`--offline` for the local
+  view). Verified live against tenx — `omarchy-setup`↔`USCourts_setup` resolves linked,
+  uncloned `myproject` shows home-only. *(The fleet/detail UX folds this into `gr status` in
+  ADR-0014.)*
+- Gates green: build, `clippy -D warnings`, `cargo test` (34 tests: core 17 · io 7 · cli 10).
 
 **Not yet:** the **first real `gr push` to tenx** (transport wired + verified; push queued);
 `--json` output; CI extras (`cargo-vet`, SBOM, coverage gate); *mandatory* FIPS (tenx-side
@@ -178,11 +185,12 @@ Push committed work that is **easy** (fast-forwardable) only.
 - Prints a per-repo result summary: `pushed N` · `up-to-date` · `SKIPPED (diverged)` ·
   `DIRTY (committed pushed, M files left uncommitted)`.
 
-### Next increment — repo lifecycle & home-aware status (designed, not yet built)
+### Next increment — repo lifecycle & home-aware status
 
 Decided in [ADR-0012](adr/0012-home-inventory-server-side-bare-repos.md) /
 [0013](adr/0013-lifecycle-commands-create-clone-sync.md) /
-[0014](adr/0014-status-ux-lifecycle-and-repo-detail.md). Today `gr` only sees **local**
+[0014](adr/0014-status-ux-lifecycle-and-repo-detail.md). **Status: ADR-0012 (home inventory)
+built & verified live (`gr homes`); 0013/0014 designed, not yet built.** Today `gr` only sees **local**
 working copies; this increment teaches it about the **bare "home" repos** on tenx too, so a
 repo becomes *a name with up to two presences* — **local** (a working copy under a root) and
 **home** (`/data/git/<name>.git`) — giving each a lifecycle state:

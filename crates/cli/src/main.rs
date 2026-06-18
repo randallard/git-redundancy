@@ -1,5 +1,6 @@
-//! `gr` — git-redundancy CLI. This increment implements `status`; `push` is
-//! scaffolded and lands next (it needs the ADR-0009 SSH aliases in place).
+//! `gr` — git-redundancy CLI. Implements `status` and `push`; `homes` surfaces
+//! the ADR-0012 home inventory (folded into `status` by ADR-0014). The `create` /
+//! `clone` / `sync` lifecycle verbs (ADR-0013) land next.
 #![forbid(unsafe_code)]
 
 mod push;
@@ -29,6 +30,8 @@ enum Command {
     Status(StatusArgs),
     /// Push easy (fast-forward), committed work home. (Not yet implemented.)
     Push(PushArgs),
+    /// List the bare "home" repos on the server and each repo's lifecycle (ADR-0012).
+    Homes(HomesArgs),
 }
 
 #[derive(clap::Args)]
@@ -63,6 +66,13 @@ pub struct PushArgs {
     pub tags: bool,
 }
 
+#[derive(clap::Args)]
+struct HomesArgs {
+    /// Skip the network: show local repos only (no server query).
+    #[arg(long)]
+    offline: bool,
+}
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
@@ -74,7 +84,52 @@ fn main() -> Result<()> {
         }),
         Some(Command::Status(args)) => run_status(&args),
         Some(Command::Push(args)) => push::run_push(&args),
+        Some(Command::Homes(args)) => run_homes(&args),
     }
+}
+
+/// `gr homes` — the ADR-0012 home inventory: every repo's lifecycle
+/// (`local-only` / `home-only` / `linked`), joining local working copies with
+/// the bare homes on the server. This is the foundation that ADR-0014 folds into
+/// `gr status`; for now it's a standalone view of the two-sided picture.
+fn run_homes(args: &HomesArgs) -> Result<()> {
+    let cfg = Config::load()?;
+    if !cfg.server_enabled() {
+        println!(
+            "No [server] configured in {}.\n\nAdd one to enable home inventory, e.g.:\n\n  [server]\n  root = \"/data/git\"\n  # aliases = [\"tenx-lan\", \"tenx-ts\"]   # else derived from your repos' remotes",
+            Config::config_path().display()
+        );
+        return Ok(());
+    }
+
+    // `--offline` disables the server query by surveying with no server root,
+    // which yields the local-only view (every repo as local-only / unmatched).
+    let survey = if args.offline {
+        let mut local_cfg = cfg.clone();
+        local_cfg.server.root.clear();
+        git_redundancy_io::survey(&local_cfg)
+    } else {
+        git_redundancy_io::survey(&cfg)
+    };
+
+    if survey.presences.is_empty() {
+        println!("No repos found (configured roots are empty or unreadable).");
+        return Ok(());
+    }
+    if !args.offline && !survey.reachable {
+        println!("(server unreachable — showing local repos only)\n");
+    }
+
+    for p in &survey.presences {
+        let local = p.local_dir.as_deref().unwrap_or("—");
+        println!(
+            "  {:<24} {:<11} local: {}",
+            p.home_name,
+            p.lifecycle.label(),
+            local
+        );
+    }
+    Ok(())
 }
 
 fn run_status(args: &StatusArgs) -> Result<()> {

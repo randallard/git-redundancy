@@ -9,7 +9,9 @@ pub mod audit;
 pub mod config;
 pub mod discovery;
 pub mod git;
+pub mod inventory;
 
 pub use audit::Audit;
 pub use config::Config;
 pub use discovery::discover;
+pub use inventory::{survey, Survey};

@@ -53,6 +53,18 @@ pub fn remotes(repo: &Path) -> Result<Vec<String>> {
         .collect())
 }
 
+/// Configured URL for `remote` (its fetch URL), or `None` when the remote is
+/// absent. Used to recover a repo's home name (ADR-0012).
+pub fn remote_url(repo: &Path, remote: &str) -> Result<Option<String>> {
+    let out = git(repo, &["remote", "get-url", remote])?;
+    if out.status.success() {
+        let url = stdout_string(&out).trim().to_string();
+        Ok((!url.is_empty()).then_some(url))
+    } else {
+        Ok(None)
+    }
+}
+
 /// Working-tree change counts.
 pub fn working_tree(repo: &Path) -> Result<WorkingTree> {
     let out = git(repo, &["status", "--porcelain=v2", "-z"])?;

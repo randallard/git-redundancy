@@ -154,6 +154,33 @@ fn status_shows_new_before_push() {
 }
 
 #[test]
+fn homes_without_server_config_explains_how_to_enable() {
+    // The default fixture config has no [server] block.
+    let fx = Fixture::new();
+    fx.gr()
+        .arg("homes")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("No [server] configured"));
+}
+
+#[test]
+fn homes_offline_shows_local_repo_as_local_only() {
+    let fx = Fixture::new();
+    // Even with a [server] configured, --offline skips the network and renders
+    // the local-only view (ADR-0012 graceful/offline path).
+    fx.write_config(&format!(
+        "roots = [\"{}\"]\n[transport]\norder = [\"data-lan\", \"data\"]\n[server]\nroot = \"/data/git\"\n",
+        fx.dev.display()
+    ));
+    fx.gr()
+        .args(["homes", "--offline"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("local-only").and(predicate::str::contains("myrepo")));
+}
+
+#[test]
 fn dry_run_changes_nothing_and_is_not_audited() {
     let fx = Fixture::new();
     fx.gr()

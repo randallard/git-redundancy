@@ -250,7 +250,14 @@ fn run_status(args: &StatusArgs) -> Result<()> {
     }
 
     if !home_known && !args.offline {
-        println!("(server unreachable — lifecycle shown as `?`, home-only repos hidden)\n");
+        if cfg.server_enabled() {
+            println!("(server unreachable — lifecycle shown as `?`, home-only repos hidden)\n");
+        } else {
+            println!(
+                "(no [server] configured — lifecycle hidden; add a [server] block with `root = \"/data/git\"` to {} to enable it)\n",
+                Config::config_path().display()
+            );
+        }
     }
     println!(
         "{}",

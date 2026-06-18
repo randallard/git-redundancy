@@ -75,14 +75,21 @@ default_remotes = ["data-lan", "data"]
 [transport]
 auto = true
 order = ["data-lan", "data"]
+
+# The bare-repo home on the server. Required for the lifecycle column in `gr status`
+# and for `create` / `clone` / `sync`. Omit it and gr stays local (lifecycle shows `?`).
+[server]
+root = "/data/git"
+aliases = ["tenx-lan", "tenx-ts"]
 ```
 
 ## 6. Verify
 
 ```bash
-gr status                     # table over the aliases
+gr status                     # table over the aliases, with the lifecycle column
 gr push --dry-run             # preview; changes nothing, not audited
 gr push                       # back up easy, committed work (LAN-first failover)
+gr sync --dry-run             # preview the two-way reconcile (push + fast-forward)
 ```
 
 ### Optional: prove FIPS is fail-closed

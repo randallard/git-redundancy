@@ -3,6 +3,28 @@
 Operational gotchas for the repo-backup transport. Design rationale lives in
 [`adr/`](adr/README.md); this is the "it broke, now what" doc.
 
+## `gr status` shows lifecycle `?`, or "no [server] configured" / "server unreachable"
+
+**Symptom:** the **Life** column is all `?`, or `gr status` prints `(no [server] configured …)`
+or `(server unreachable …)`.
+
+**Cause & fix** — these are three different states:
+
+- **No `[server]` block** → gr never contacts the server (it says so). The lifecycle column,
+  `home-only` rows, and `create`/`clone`/`sync` all need it. Add to
+  `~/.config/git-redundancy/config.toml`:
+  ```toml
+  [server]
+  root = "/data/git"
+  aliases = ["tenx-lan", "tenx-ts"]
+  ```
+- **`[server]` set but unreachable** → the message is `(server unreachable …)`. gr connects
+  **non-interactively** (`ssh -o BatchMode=yes`), so an interactive `ssh tenx-lan` working is
+  not enough — the key must be passphrase-less or loaded in an agent. Check:
+  `ssh -o BatchMode=yes tenx-lan 'ls /data/git'`. If that hangs/fails, the host may be asleep
+  (see "tenx is asleep" below) or the key isn't in your agent (`ssh-add -l`).
+- **`--offline`** also renders lifecycle as `?` — on purpose; it skips the server query.
+
 ## `data-lan` push fails / `tenx-rltec.local` resolves wrong when Zscaler is up
 
 **Symptom:** pushes to `data-lan` (the `tenx-lan` SSH alias) hang or fail, or

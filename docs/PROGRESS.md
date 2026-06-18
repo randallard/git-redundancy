@@ -176,19 +176,20 @@ Columns:
 
 | Column | Meaning | Source |
 |---|---|---|
-| Repo | dir name | discovery |
+| Repo | dir name (home name for home-only rows) | discovery / inventory |
+| Life | lifecycle: `linked` / `local-only` / `home-only` / `?` (ADR-0012/0014) | inventory |
 | Branch | current branch (or detached) | `HEAD` |
-| Staged / Unstaged / Untracked | counts (or ✓/•) of index vs worktree vs untracked | `git status --porcelain=v2 -z` |
+| Staged / Unstaged / Untracked / Cf | index vs worktree vs untracked vs conflicts | `git status --porcelain=v2 -z` |
 | Per-remote `↑ahead / ↓behind` | commits local-vs-remote-tracking, per configured remote | rev-list left-right |
-| Merge | `ff` (clean fast-forward) · `diverged` · **`CONFLICT`** · `new` (no remote branch) | `git merge-tree --write-tree` (git ≥ 2.38) |
+| ⚠ | `+N` other branches needing attention (ADR-0014) | per-branch classification |
 
-- **Merge difficulty** is detected *without touching the working tree* via
-  `git merge-tree --write-tree base local remote`, which reports conflicts directly.
+- **Merge difficulty** (`new`/`diverged`/`CONFLICT`) is detected *without touching the
+  working tree* via `git merge-tree --write-tree`, which reports conflicts directly.
 - Color: clean = dim, ahead-only = green, behind/diverged = yellow, conflict/dirty = red.
 - **Scope:** default = current branch per repo; `-a` / `--all-branches` = one row per
-  local branch.
-- Flags: `--remote <name>` (limit columns), `--dirty-only`, `--json` (machine output),
-  `--no-color`.
+  local branch. **`gr status <repo>`** = one repo, all branches, with the `sync` action.
+- Flags: `--remote <name>` (limit columns), `--offline` (skip server query), `--json`
+  (machine output), `--no-color`. *(`--dirty-only` from ADR-0006 is not yet built.)*
 
 ### `gr push`
 Push committed work that is **easy** (fast-forwardable) only.

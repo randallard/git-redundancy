@@ -145,3 +145,69 @@ pub fn push(
         stderr: String::from_utf8_lossy(&out.stderr).trim().to_string(),
     })
 }
+
+// --- mutating local ops for the lifecycle commands (ADR-0013) ----------------
+
+/// Outcome of a mutating git command: success + captured stderr (first line is
+/// what the CLI surfaces on failure).
+pub struct CmdOutcome {
+    pub success: bool,
+    pub stderr: String,
+}
+
+fn outcome(out: Output) -> CmdOutcome {
+    CmdOutcome {
+        success: out.status.success(),
+        stderr: String::from_utf8_lossy(&out.stderr).trim().to_string(),
+    }
+}
+
+/// `git clone <url> <dir>`. Run without `-C` (the target doesn't exist yet).
+pub fn clone(url: &str, dir: &Path) -> Result<CmdOutcome> {
+    let out = Command::new("git")
+        .arg("clone")
+        .arg(url)
+        .arg(dir)
+        .output()
+        .with_context(|| format!("cloning {url} into {}", dir.display()))?;
+    Ok(outcome(out))
+}
+
+/// Add remote `name` → `url`.
+pub fn add_remote(repo: &Path, name: &str, url: &str) -> Result<CmdOutcome> {
+    Ok(outcome(git(repo, &["remote", "add", name, url])?))
+}
+
+/// Repoint an existing remote `name` at `url`.
+pub fn set_remote_url(repo: &Path, name: &str, url: &str) -> Result<CmdOutcome> {
+    Ok(outcome(git(repo, &["remote", "set-url", name, url])?))
+}
+
+/// Remove remote `name`. A missing remote is not an error (idempotent cleanup,
+/// e.g. dropping the clone-minted `origin`).
+pub fn remove_remote(repo: &Path, name: &str) -> Result<()> {
+    let _ = git(repo, &["remote", "remove", name])?;
+    Ok(())
+}
+
+/// `git fetch <remote>` — refresh remote-tracking refs before classifying.
+pub fn fetch(repo: &Path, remote: &str) -> Result<CmdOutcome> {
+    Ok(outcome(git(repo, &["fetch", remote])?))
+}
+
+/// Fast-forward the **current** branch to `<remote>/<branch>` via
+/// `git merge --ff-only` — never a merge commit, never a non-ff. Caller must
+/// ensure `branch` is checked out and the tree is clean.
+pub fn ff_merge_current(repo: &Path, remote: &str, branch: &str) -> Result<CmdOutcome> {
+    let upstream = format!("{remote}/{branch}");
+    Ok(outcome(git(repo, &["merge", "--ff-only", &upstream])?))
+}
+
+/// Fast-forward a **non-current** local branch ref to its tracking ref without a
+/// checkout, via `git fetch . <remote>/<branch>:<branch>`. Branch-ref updates are
+/// fast-forward-only (git rejects non-ff without `--force`), so this is safe and
+/// never touches the working tree.
+pub fn ff_update_branch(repo: &Path, remote: &str, branch: &str) -> Result<CmdOutcome> {
+    let refspec = format!("refs/remotes/{remote}/{branch}:refs/heads/{branch}");
+    Ok(outcome(git(repo, &["fetch", ".", &refspec])?))
+}

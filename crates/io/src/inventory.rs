@@ -26,7 +26,7 @@ pub struct Survey {
 
 /// The remotes that name the transport paths to the home, in preference order
 /// (`transport.order`, falling back to `default_remotes`).
-fn transport_remotes(cfg: &Config) -> Vec<String> {
+pub(crate) fn transport_remotes(cfg: &Config) -> Vec<String> {
     if cfg.transport.order.is_empty() {
         cfg.default_remotes.clone()
     } else {
@@ -61,7 +61,7 @@ fn parse_home_list(stdout: &str) -> Vec<String> {
 
 /// SSH aliases to try, in order: explicit `[server].aliases`, else derived from
 /// the transport remotes' URLs across discovered repos (de-duplicated).
-fn resolve_aliases(cfg: &Config, repos: &[PathBuf]) -> Vec<String> {
+pub(crate) fn resolve_aliases(cfg: &Config, repos: &[PathBuf]) -> Vec<String> {
     if !cfg.server.aliases.is_empty() {
         return cfg.server.aliases.clone();
     }

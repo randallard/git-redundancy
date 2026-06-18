@@ -181,6 +181,100 @@ fn homes_offline_shows_local_repo_as_local_only() {
 }
 
 #[test]
+fn create_without_server_config_fails_with_guidance() {
+    let fx = Fixture::new(); // default config has no [server]
+    fx.gr()
+        .current_dir(&fx.workrepo)
+        .arg("create")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("no [server] configured"));
+}
+
+#[test]
+fn clone_target_outside_roots_is_refused_with_guidance() {
+    let fx = Fixture::new();
+    fx.write_config(&format!(
+        "roots = [\"{}\"]\n[server]\nroot = \"/data/git\"\naliases = [\"tenx-lan\"]\n",
+        fx.dev.display()
+    ));
+    // A target outside every configured root: refused before any network, exit 0,
+    // with the roots listed (the user's move).
+    fx.gr()
+        .args(["clone", "somerepo", "/tmp/definitely-not-a-root/x"])
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("not inside a configured root")
+                .and(predicate::str::contains("your move")),
+        );
+}
+
+#[test]
+fn sync_with_nonmatching_only_filter_matches_nothing() {
+    let fx = Fixture::new();
+    fx.gr()
+        .args(["sync", "no-such-repo"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("No repos match"));
+}
+
+#[test]
+fn sync_pushes_committed_work() {
+    let fx = Fixture::new();
+    // The fixture's one commit was never pushed → sync pushes it (new branch).
+    fx.gr()
+        .arg("sync")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("pushed"));
+}
+
+#[test]
+fn sync_dry_run_pushes_nothing() {
+    let fx = Fixture::new();
+    fx.gr()
+        .args(["sync", "--dry-run"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("would push"));
+}
+
+#[test]
+fn sync_fast_forwards_when_home_is_ahead_and_tree_clean() {
+    let fx = Fixture::new();
+    // Advance the home past the work repo, then move the work repo back so it is
+    // strictly behind: sync must fast-forward it.
+    fx.git(&fx.workrepo, &["push", "data-lan", "main"]);
+    fx.write("a.txt", "one\ntwo\nthree\nfour\n");
+    fx.commit_all("c2");
+    fx.git(&fx.workrepo, &["push", "data-lan", "main"]); // home @ c2
+    fx.git(&fx.workrepo, &["reset", "--hard", "HEAD~1"]); // work repo @ c1, clean
+    fx.gr()
+        .arg("sync")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("fast-forwarded"));
+}
+
+#[test]
+fn sync_blocks_fast_forward_when_tree_is_dirty() {
+    let fx = Fixture::new();
+    fx.git(&fx.workrepo, &["push", "data-lan", "main"]);
+    fx.write("a.txt", "one\ntwo\nthree\nfour\n");
+    fx.commit_all("c2");
+    fx.git(&fx.workrepo, &["push", "data-lan", "main"]); // home @ c2
+    fx.git(&fx.workrepo, &["reset", "--hard", "HEAD~1"]); // behind by 1
+    fx.write("a.txt", "dirty edit\n"); // uncommitted change to a tracked file
+    fx.gr()
+        .arg("sync")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("tree dirty"));
+}
+
+#[test]
 fn dry_run_changes_nothing_and_is_not_audited() {
     let fx = Fixture::new();
     fx.gr()

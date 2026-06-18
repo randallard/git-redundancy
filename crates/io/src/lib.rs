@@ -10,6 +10,7 @@ pub mod config;
 pub mod discovery;
 pub mod git;
 pub mod inventory;
+pub mod server;
 
 pub use audit::Audit;
 pub use config::Config;

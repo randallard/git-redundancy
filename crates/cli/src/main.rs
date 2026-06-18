@@ -3,6 +3,7 @@
 //! `clone` / `sync` lifecycle verbs (ADR-0013) land next.
 #![forbid(unsafe_code)]
 
+mod lifecycle;
 mod push;
 mod render;
 
@@ -32,6 +33,12 @@ enum Command {
     Push(PushArgs),
     /// List the bare "home" repos on the server and each repo's lifecycle (ADR-0012).
     Homes(HomesArgs),
+    /// Create a bare home for the current repo, wire the remotes, and push (ADR-0013).
+    Create(CreateArgs),
+    /// Clone a home-only repo into a configured root and wire its remotes (ADR-0013).
+    Clone(CloneArgs),
+    /// Reconcile easy work both ways: push ahead, fast-forward behind (ADR-0013).
+    Sync(SyncArgs),
 }
 
 #[derive(clap::Args)]
@@ -73,6 +80,38 @@ struct HomesArgs {
     offline: bool,
 }
 
+#[derive(clap::Args)]
+pub struct CreateArgs {
+    /// Home name (default: current directory name).
+    pub name: Option<String>,
+    /// Push every local branch, not just the current one.
+    #[arg(short = 'a', long)]
+    pub all_branches: bool,
+}
+
+#[derive(clap::Args)]
+pub struct CloneArgs {
+    /// Home name to clone (`<root>/<name>.git` on the server).
+    pub name: String,
+    /// Target directory (must be inside a configured root; default `<roots[0]>/<name>`).
+    pub dir: Option<std::path::PathBuf>,
+}
+
+#[derive(clap::Args)]
+pub struct SyncArgs {
+    /// Reconcile every local branch instead of just the current one.
+    #[arg(short = 'a', long)]
+    pub all_branches: bool,
+    /// Confirm each effecting action (push / fast-forward) before it runs.
+    #[arg(short = 'i', long)]
+    pub interactive: bool,
+    /// Show what would happen without changing anything.
+    #[arg(long)]
+    pub dry_run: bool,
+    /// Limit to these repos (by directory name); positional, repeatable.
+    pub repos: Vec<String>,
+}
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
@@ -85,6 +124,9 @@ fn main() -> Result<()> {
         Some(Command::Status(args)) => run_status(&args),
         Some(Command::Push(args)) => push::run_push(&args),
         Some(Command::Homes(args)) => run_homes(&args),
+        Some(Command::Create(args)) => lifecycle::run_create(&args),
+        Some(Command::Clone(args)) => lifecycle::run_clone(&args),
+        Some(Command::Sync(args)) => lifecycle::run_sync(&args),
     }
 }
 

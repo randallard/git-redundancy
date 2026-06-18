@@ -72,9 +72,13 @@ Workspace: `crates/{core,io,cli}` (ADR-0002), `#![forbid(unsafe_code)]` througho
   cli 20); coverage ~76% line (pure `core` 98–100%; the SSH-execution paths in `server`/
   lifecycle `create`/`clone` are live-verified, not hermetic).
 
-**Not yet:** the **first real `gr push` to tenx** (transport wired + verified; push queued);
-`--json` output; CI extras (`cargo-vet`, SBOM, coverage gate); *mandatory* FIPS (tenx-side
-`sshd`/crypto-policy — the deferred tier).
+**Not yet:** *mandatory* FIPS (tenx-side `sshd`/crypto-policy — the deferred tier); the
+operational item of keeping tenx awake/reachable at day's end; a future GUI (Tauri).
+
+**Recently done:** the real backup path to tenx (the `create`→`sync`→`clone` round-trips
+push live); **`gr status --json`** (machine-readable output, ADR-0006); **CI supply-chain +
+coverage gates** — `cargo-vet` (`supply-chain/` baseline) + a CycloneDX SBOM artifact +
+`cargo llvm-cov --fail-under-lines 70`; `gr homes` retired into a `status` alias.
 
 **Done since:** integration tests (`assert_cmd`, 8 hermetic cases); `kani` proofs written
 **and verified green** (3/3); gix/ADR-0003 deviation reconciled ([ADR-0010](adr/0010-system-git-for-local-reads.md));
@@ -303,10 +307,12 @@ automatically — but the **roots themselves are always explicit**.
 - ✅ **Integration** with `assert_cmd` + `tempfile`: 8 hermetic cases run the actual binary
   and assert push/status behavior (new-branch, dry-run, fast-forward, up-to-date, failover,
   diverged-skip, dirty-warn, non-zero exit on failure).
-- ✅ **CI quality + supply-chain gates** (`.github/workflows/ci.yml`, ADR-0011): `fmt
+- ✅ **CI quality + supply-chain gates** (`.github/workflows/ci.yml`, ADR-0011/0004): `fmt
   --check`, `clippy -D warnings`, `cargo test`, and `cargo-deny` (licenses/bans/sources/
-  advisories) on every push; Kani in a separate cached job. *(First GitHub run pending.)*
-- ⬜ Still open: `cargo-vet`, SBOM, and a `cargo-llvm-cov` coverage gate.
+  advisories) on every push; Kani in a separate cached job; a **coverage gate** (`cargo
+  llvm-cov --fail-under-lines 70`); and a **supply-chain job** — `cargo vet --locked`
+  (`supply-chain/` baseline) + a CycloneDX SBOM artifact. See [DEVELOPMENT.md](DEVELOPMENT.md).
+- ⬜ Still open: ongoing `cargo-vet` audits as deps change (baseline is exemptions for now).
 
 ---
 

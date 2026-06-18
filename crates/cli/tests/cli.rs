@@ -191,30 +191,30 @@ fn status_repo_detail_shows_sync_action_column() {
 }
 
 #[test]
-fn homes_without_server_config_explains_how_to_enable() {
-    // The default fixture config has no [server] block.
+fn homes_is_an_alias_for_the_status_fleet_view() {
+    // `homes` retired into a thin alias for `status` (lifecycle is a column now).
     let fx = Fixture::new();
     fx.gr()
         .arg("homes")
         .assert()
         .success()
-        .stdout(predicate::str::contains("No [server] configured"));
+        .stdout(predicate::str::contains("myrepo").and(predicate::str::contains("Life")));
 }
 
 #[test]
-fn homes_offline_shows_local_repo_as_local_only() {
+fn status_json_emits_structured_output() {
     let fx = Fixture::new();
-    // Even with a [server] configured, --offline skips the network and renders
-    // the local-only view (ADR-0012 graceful/offline path).
-    fx.write_config(&format!(
-        "roots = [\"{}\"]\n[transport]\norder = [\"data-lan\", \"data\"]\n[server]\nroot = \"/data/git\"\n",
-        fx.dev.display()
-    ));
+    // --json replaces the table with parseable JSON (no box-drawing characters).
     fx.gr()
-        .args(["homes", "--offline"])
+        .args(["status", "--json"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("local-only").and(predicate::str::contains("myrepo")));
+        .stdout(
+            predicate::str::contains("\"repo\": \"myrepo\"")
+                .and(predicate::str::contains("\"branches\""))
+                .and(predicate::str::contains("\"lifecycle\""))
+                .and(predicate::str::contains('╭').not()),
+        );
 }
 
 #[test]

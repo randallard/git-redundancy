@@ -6,6 +6,7 @@
 mod lifecycle;
 mod push;
 mod render;
+mod statusjson;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
@@ -31,7 +32,7 @@ enum Command {
     Status(StatusArgs),
     /// Push easy (fast-forward), committed work home. (Not yet implemented.)
     Push(PushArgs),
-    /// List the bare "home" repos on the server and each repo's lifecycle (ADR-0012).
+    /// Alias for `status` — the lifecycle is now a column there (ADR-0012/0014).
     Homes(HomesArgs),
     /// Create a bare home for the current repo, wire the remotes, and push (ADR-0013).
     Create(CreateArgs),
@@ -54,6 +55,9 @@ struct StatusArgs {
     /// Skip the server query; show the local view with lifecycle unknown (`?`).
     #[arg(long)]
     offline: bool,
+    /// Emit machine-readable JSON instead of the table.
+    #[arg(long)]
+    json: bool,
     /// Disable colored output (also auto-disabled when not a TTY or NO_COLOR is set).
     #[arg(long)]
     no_color: bool,
@@ -126,59 +130,24 @@ fn main() -> Result<()> {
             all_branches: false,
             remote: None,
             offline: false,
+            json: false,
             no_color: false,
         }),
         Some(Command::Status(args)) => run_status(&args),
         Some(Command::Push(args)) => push::run_push(&args),
-        Some(Command::Homes(args)) => run_homes(&args),
+        // `homes` is a thin alias for the fleet `status` view (ADR-0014).
+        Some(Command::Homes(args)) => run_status(&StatusArgs {
+            repo: None,
+            all_branches: false,
+            remote: None,
+            offline: args.offline,
+            json: false,
+            no_color: false,
+        }),
         Some(Command::Create(args)) => lifecycle::run_create(&args),
         Some(Command::Clone(args)) => lifecycle::run_clone(&args),
         Some(Command::Sync(args)) => lifecycle::run_sync(&args),
     }
-}
-
-/// `gr homes` — the ADR-0012 home inventory: every repo's lifecycle
-/// (`local-only` / `home-only` / `linked`), joining local working copies with
-/// the bare homes on the server. This is the foundation that ADR-0014 folds into
-/// `gr status`; for now it's a standalone view of the two-sided picture.
-fn run_homes(args: &HomesArgs) -> Result<()> {
-    let cfg = Config::load()?;
-    if !cfg.server_enabled() {
-        println!(
-            "No [server] configured in {}.\n\nAdd one to enable home inventory, e.g.:\n\n  [server]\n  root = \"/data/git\"\n  # aliases = [\"tenx-lan\", \"tenx-ts\"]   # else derived from your repos' remotes",
-            Config::config_path().display()
-        );
-        return Ok(());
-    }
-
-    // `--offline` disables the server query by surveying with no server root,
-    // which yields the local-only view (every repo as local-only / unmatched).
-    let survey = if args.offline {
-        let mut local_cfg = cfg.clone();
-        local_cfg.server.root.clear();
-        git_redundancy_io::survey(&local_cfg)
-    } else {
-        git_redundancy_io::survey(&cfg)
-    };
-
-    if survey.presences.is_empty() {
-        println!("No repos found (configured roots are empty or unreadable).");
-        return Ok(());
-    }
-    if !args.offline && !survey.reachable {
-        println!("(server unreachable — showing local repos only)\n");
-    }
-
-    for p in &survey.presences {
-        let local = p.local_dir.as_deref().unwrap_or("—");
-        println!(
-            "  {:<24} {:<11} local: {}",
-            p.home_name,
-            p.lifecycle.label(),
-            local
-        );
-    }
-    Ok(())
 }
 
 fn file_name_string(p: &Path) -> String {
@@ -230,12 +199,20 @@ fn run_status(args: &StatusArgs) -> Result<()> {
         );
     }
 
+    let shown = shown_remotes(args, &cfg, &repos)?;
+
     if survey.presences.is_empty() {
-        println!("No repos found under the configured roots/repos.");
+        if args.json {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&statusjson::fleet(&shown, &[]))?
+            );
+        } else {
+            println!("No repos found under the configured roots/repos.");
+        }
         return Ok(());
     }
 
-    let shown = shown_remotes(args, &cfg, &repos)?;
     let mut rows = Vec::new();
     for p in &survey.presences {
         let life = if home_known {
@@ -262,6 +239,14 @@ fn run_status(args: &StatusArgs) -> Result<()> {
                 rows.push(row);
             }
         }
+    }
+
+    if args.json {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&statusjson::fleet(&shown, &rows))?
+        );
+        return Ok(());
     }
 
     if !home_known && !args.offline {
@@ -380,7 +365,11 @@ fn run_status_detail(
         .iter()
         .find(|p| p.home_name == target || p.local_dir.as_deref() == Some(target))
     else {
-        println!("No repo named `{target}`. Run `gr status` to list them.");
+        if args.json {
+            println!("null");
+        } else {
+            println!("No repo named `{target}`. Run `gr status` to list them.");
+        }
         return Ok(());
     };
 
@@ -440,6 +429,13 @@ fn run_status_detail(
     }
 
     let life = if home_known { p.lifecycle.label() } else { "?" };
+    if args.json {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&statusjson::detail(&p.home_name, life, &shown, &rows))?
+        );
+        return Ok(());
+    }
     println!("{}  [{}]", p.home_name, life);
     println!("{}", render::detail_table(&shown, &rows, color));
     Ok(())

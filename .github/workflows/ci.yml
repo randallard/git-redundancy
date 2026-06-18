@@ -50,3 +50,43 @@ jobs:
         with:
           kani-version: '0.67.0'
           args: '-p git-redundancy-core'
+
+  # Coverage gate (ADR-0004) — line coverage must clear the floor. The threshold
+  # sits below the headline number because the SSH-execution paths (io::server,
+  # create/clone) only run against a live server and are verified by hand.
+  coverage:
+    name: coverage gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-llvm-cov
+      - name: coverage (fail under 70% lines)
+        run: cargo llvm-cov --workspace --fail-under-lines 70
+
+  # Supply chain (ADR-0004, SR/CM) — dependency review (cargo-vet) and an SBOM.
+  supply-chain:
+    name: supply chain
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-vet,cargo-cyclonedx
+      - name: cargo-vet (audited/exempted dependencies)
+        run: cargo vet --locked
+      - name: generate SBOM (CycloneDX)
+        run: cargo cyclonedx --format json --all
+      - name: upload SBOM
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: "**/*.cdx.json"
+          if-no-files-found: warn

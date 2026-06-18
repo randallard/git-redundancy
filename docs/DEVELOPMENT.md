@@ -105,9 +105,40 @@ If `cargo kani setup` fails at the toolchain step on Arch (`rustup … No such f
 directory`), you're on the pacman `rust` package — switch to `rustup`; the fix is in
 [TROUBLESHOOTING](TROUBLESHOOTING.md).
 
+## Supply chain — `cargo-deny`, `cargo-vet`, SBOM
+
+Dependency hygiene gates (ADR-0004, SR/CM families).
+
+```bash
+cargo deny check                          # licenses, bans, sources, advisories (config: deny.toml)
+cargo vet                                 # every dependency is audited or exempted (supply-chain/)
+cargo cyclonedx --format json --all       # generate a CycloneDX SBOM (*.cdx.json, gitignored)
+```
+
+`cargo-vet` keeps its state in `supply-chain/` (committed): `config.toml` lists exemptions
+for the current tree, `audits.toml` holds any first-party audits. After adding or bumping a
+dependency, `cargo vet` will flag it — re-exempt or audit it (`cargo vet --help`), commit the
+`supply-chain/` change. CI runs `cargo vet --locked`. Install the tools with
+`cargo install cargo-vet cargo-cyclonedx` (CI uses `taiki-e/install-action` for prebuilt
+binaries).
+
+## Coverage gate
+
+CI enforces a line-coverage floor:
+
+```bash
+cargo llvm-cov --workspace --fail-under-lines 70   # the same check CI runs
+```
+
+The floor (70%) sits below the headline (~76%) on purpose: the SSH-execution paths in
+`io::server` and `create`/`clone` only run against a live server and are verified by hand, so
+they pull the number down without being a real gap.
+
 ## What CI runs
 
-Per [ADR-0011](adr/0011-ci-fast-gates-plus-kani-every-push.md), every push runs the **fast
-gates** (`fmt --check`, `clippy -D warnings`, `cargo test`, plus `cargo-deny` for
-licenses/bans/sources/advisories) and **Kani** in a separate cached job. Coverage is not yet
-a CI gate — it's a local tool for now.
+Per [ADR-0011](adr/0011-ci-fast-gates-plus-kani-every-push.md) and ADR-0004, every push runs:
+
+- **fast gates** — `fmt --check`, `clippy -D warnings`, `cargo test`, `cargo-deny`;
+- **kani proofs** — separate cached job;
+- **coverage gate** — `cargo llvm-cov --fail-under-lines 70`;
+- **supply chain** — `cargo vet --locked` + a CycloneDX SBOM artifact.

@@ -1,1 +1,5 @@
 /target
+
+# Generated SBOMs (CycloneDX) — produced in CI, not source.
+*.cdx.json
+*.cdx.xml

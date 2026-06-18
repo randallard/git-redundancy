@@ -154,6 +154,43 @@ fn status_shows_new_before_push() {
 }
 
 #[test]
+fn status_offline_shows_lifecycle_column_unknown() {
+    let fx = Fixture::new(); // no [server] → home side unknown
+    fx.gr()
+        .args(["status", "--offline"])
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("Life")
+                .and(predicate::str::contains("?"))
+                .and(predicate::str::contains("myrepo")),
+        );
+}
+
+#[test]
+fn status_flags_other_branches_needing_attention() {
+    let fx = Fixture::new();
+    // current branch is main; a second, un-backed-up branch should raise +1⚠.
+    fx.git(&fx.workrepo, &["branch", "feature"]);
+    fx.gr()
+        .arg("status")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("+1⚠"));
+}
+
+#[test]
+fn status_repo_detail_shows_sync_action_column() {
+    let fx = Fixture::new();
+    // `gr status <repo>` resolves by directory name and previews sync actions.
+    fx.gr()
+        .args(["status", "myrepo"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("sync").and(predicate::str::contains("push")));
+}
+
+#[test]
 fn homes_without_server_config_explains_how_to_enable() {
     // The default fixture config has no [server] block.
     let fx = Fixture::new();

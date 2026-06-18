@@ -1,6 +1,6 @@
-//! `gr` — git-redundancy CLI. Implements `status` and `push`; `homes` surfaces
-//! the ADR-0012 home inventory (folded into `status` by ADR-0014). The `create` /
-//! `clone` / `sync` lifecycle verbs (ADR-0013) land next.
+//! `gr` — git-redundancy CLI. `status` (home-aware, with a `<repo>` detail view,
+//! ADR-0014) · `push` · `create` / `clone` / `sync` lifecycle verbs (ADR-0013) ·
+//! `homes` (the ADR-0012 inventory, now also surfaced in `status`).
 #![forbid(unsafe_code)]
 
 mod lifecycle;
@@ -9,10 +9,10 @@ mod render;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
-use git_redundancy_core::BranchSync;
-use git_redundancy_io::{config::Config, discovery::discover, git};
-use std::collections::BTreeSet;
-use std::path::Path;
+use git_redundancy_core::{BranchSync, SyncAction};
+use git_redundancy_io::{config::Config, discovery::discover, git, server};
+use std::collections::{BTreeMap, BTreeSet};
+use std::path::{Path, PathBuf};
 
 #[derive(Parser)]
 #[command(
@@ -43,12 +43,17 @@ enum Command {
 
 #[derive(clap::Args)]
 struct StatusArgs {
+    /// One repo (by home or directory name) → all-branches detail view (ADR-0014).
+    repo: Option<String>,
     /// One row per local branch instead of just the current branch.
     #[arg(short = 'a', long)]
     all_branches: bool,
     /// Limit the table to a single remote.
     #[arg(long)]
     remote: Option<String>,
+    /// Skip the server query; show the local view with lifecycle unknown (`?`).
+    #[arg(long)]
+    offline: bool,
     /// Disable colored output (also auto-disabled when not a TTY or NO_COLOR is set).
     #[arg(long)]
     no_color: bool,
@@ -117,8 +122,10 @@ fn main() -> Result<()> {
     match cli.command {
         // Default command (no subcommand) is `status`.
         None => run_status(&StatusArgs {
+            repo: None,
             all_branches: false,
             remote: None,
+            offline: false,
             no_color: false,
         }),
         Some(Command::Status(args)) => run_status(&args),
@@ -174,6 +181,26 @@ fn run_homes(args: &HomesArgs) -> Result<()> {
     Ok(())
 }
 
+fn file_name_string(p: &Path) -> String {
+    p.file_name()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|| p.display().to_string())
+}
+
+/// Survey the home inventory for lifecycle, honoring `--offline` (skip the
+/// network). Returns the survey plus whether the home side is actually known.
+fn status_survey(cfg: &Config, offline: bool) -> (git_redundancy_io::Survey, bool) {
+    if offline || !cfg.server_enabled() {
+        let mut local_cfg = cfg.clone();
+        local_cfg.server.root.clear();
+        (git_redundancy_io::survey(&local_cfg), false)
+    } else {
+        let s = git_redundancy_io::survey(cfg);
+        let known = s.reachable;
+        (s, known)
+    }
+}
+
 fn run_status(args: &StatusArgs) -> Result<()> {
     let cfg = Config::load()?;
     if cfg.is_empty() {
@@ -185,63 +212,255 @@ fn run_status(args: &StatusArgs) -> Result<()> {
     }
 
     let repos = discover(&cfg);
-    if repos.is_empty() {
+    let path_by_dir: BTreeMap<String, PathBuf> = repos
+        .iter()
+        .map(|p| (file_name_string(p), p.clone()))
+        .collect();
+    let (survey, home_known) = status_survey(&cfg, args.offline);
+
+    if let Some(target) = &args.repo {
+        return run_status_detail(
+            &cfg,
+            &repos,
+            &path_by_dir,
+            &survey,
+            target,
+            args,
+            home_known,
+        );
+    }
+
+    if survey.presences.is_empty() {
         println!("No repos found under the configured roots/repos.");
         return Ok(());
     }
 
-    // Which remote columns to show.
-    let shown_remotes = shown_remotes(args, &cfg, &repos)?;
-
+    let shown = shown_remotes(args, &cfg, &repos)?;
     let mut rows = Vec::new();
-    for repo in &repos {
-        let name = repo
-            .file_name()
-            .map(|s| s.to_string_lossy().into_owned())
-            .unwrap_or_else(|| repo.display().to_string());
-        let current = git::current_branch(repo)?;
-        let wt = git::working_tree(repo)?;
-        let repo_remotes: BTreeSet<String> = git::remotes(repo)?.into_iter().collect();
-
-        let branches: Vec<String> = if args.all_branches {
-            git::local_branches(repo)?
+    for p in &survey.presences {
+        let life = if home_known {
+            p.lifecycle.label().to_string()
         } else {
-            current.clone().into_iter().collect()
+            "?".to_string()
         };
-
-        if branches.is_empty() {
-            // Detached HEAD or no branches: still show a row.
-            rows.push(render::Row {
-                repo: name.clone(),
-                branch: current.clone().unwrap_or_else(|| "(detached)".into()),
-                is_current: true,
-                wt: Some(wt),
-                remote_cells: shown_remotes.iter().map(|_| None).collect(),
-            });
-            continue;
-        }
-
-        for (i, branch) in branches.iter().enumerate() {
-            let is_current = current.as_deref() == Some(branch.as_str());
-            let cells = shown_remotes
-                .iter()
-                .map(|remote| sync_cell(repo, branch, remote, &repo_remotes))
-                .collect::<Result<Vec<_>>>()?;
-            rows.push(render::Row {
-                repo: if i == 0 { name.clone() } else { String::new() },
-                branch: branch.clone(),
-                is_current,
-                wt: if is_current { Some(wt) } else { None },
-                remote_cells: cells,
-            });
+        match p.local_dir.as_ref().and_then(|d| path_by_dir.get(d)) {
+            // Local repos display their on-disk directory name; the home name is
+            // the internal identity (and the `gr status <name>` detail header).
+            Some(repo) => build_local_rows(
+                repo,
+                &file_name_string(repo),
+                &life,
+                &shown,
+                args,
+                &mut rows,
+            )?,
+            None => {
+                // home-only repo (only present when the home side is known).
+                let mut row = render::Row::new(p.home_name.clone(), "(home)".into(), false);
+                row.lifecycle = life;
+                row.remote_cells = shown.iter().map(|_| None).collect();
+                rows.push(row);
+            }
         }
     }
 
+    if !home_known && !args.offline {
+        println!("(server unreachable — lifecycle shown as `?`, home-only repos hidden)\n");
+    }
     println!(
         "{}",
-        render::table(&shown_remotes, &rows, color_enabled(args.no_color))
+        render::table(&shown, &rows, color_enabled(args.no_color))
     );
     Ok(())
+}
+
+/// Build the fleet rows for one local repo: branch rows + lifecycle on the first
+/// row + the `+N⚠` indicator on the current row (default view only).
+fn build_local_rows(
+    repo: &Path,
+    display: &str,
+    life: &str,
+    shown: &[String],
+    args: &StatusArgs,
+    rows: &mut Vec<render::Row>,
+) -> Result<()> {
+    let current = git::current_branch(repo)?;
+    let wt = git::working_tree(repo)?;
+    let repo_remotes: BTreeSet<String> = git::remotes(repo)?.into_iter().collect();
+    let branches: Vec<String> = if args.all_branches {
+        git::local_branches(repo)?
+    } else {
+        current.clone().into_iter().collect()
+    };
+
+    if branches.is_empty() {
+        let mut row = render::Row::new(
+            display.to_string(),
+            current.clone().unwrap_or_else(|| "(detached)".into()),
+            true,
+        );
+        row.lifecycle = life.to_string();
+        row.wt = Some(wt);
+        row.remote_cells = shown.iter().map(|_| None).collect();
+        rows.push(row);
+        return Ok(());
+    }
+
+    // Primary remote for the "others" count: the first shown remote present.
+    let primary = shown.iter().find(|r| repo_remotes.contains(*r)).cloned();
+    let others = if args.all_branches {
+        None // every branch is already a row; the indicator is redundant
+    } else {
+        others_needing_attention(repo, &current, primary.as_deref())?
+    };
+
+    for (i, branch) in branches.iter().enumerate() {
+        let is_current = current.as_deref() == Some(branch.as_str());
+        let cells = shown
+            .iter()
+            .map(|r| sync_cell(repo, branch, r, &repo_remotes))
+            .collect::<Result<Vec<_>>>()?;
+        let mut row = render::Row::new(
+            if i == 0 {
+                display.to_string()
+            } else {
+                String::new()
+            },
+            branch.clone(),
+            is_current,
+        );
+        if i == 0 {
+            row.lifecycle = life.to_string();
+        }
+        row.wt = if is_current { Some(wt) } else { None };
+        row.remote_cells = cells;
+        if is_current {
+            row.others = others;
+        }
+        rows.push(row);
+    }
+    Ok(())
+}
+
+/// Count branches *other* than `current` that aren't up-to-date with the primary
+/// home remote — the `+N⚠` hint so a clean current branch can't hide drift.
+fn others_needing_attention(
+    repo: &Path,
+    current: &Option<String>,
+    primary: Option<&str>,
+) -> Result<Option<u32>> {
+    let Some(remote) = primary else {
+        return Ok(None);
+    };
+    let mut n = 0;
+    for b in git::local_branches(repo)? {
+        if current.as_deref() == Some(b.as_str()) {
+            continue;
+        }
+        if !matches!(git::branch_sync(repo, &b, remote)?, BranchSync::UpToDate) {
+            n += 1;
+        }
+    }
+    Ok(Some(n))
+}
+
+/// `gr status <repo>` — one repo, every branch, with the action `sync` would
+/// take. Works for a local repo or a home-only one (branches via `ls-remote`).
+fn run_status_detail(
+    cfg: &Config,
+    repos: &[PathBuf],
+    path_by_dir: &BTreeMap<String, PathBuf>,
+    survey: &git_redundancy_io::Survey,
+    target: &str,
+    args: &StatusArgs,
+    home_known: bool,
+) -> Result<()> {
+    let Some(p) = survey
+        .presences
+        .iter()
+        .find(|p| p.home_name == target || p.local_dir.as_deref() == Some(target))
+    else {
+        println!("No repo named `{target}`. Run `gr status` to list them.");
+        return Ok(());
+    };
+
+    let shown = shown_remotes(args, cfg, repos)?;
+    let color = color_enabled(args.no_color);
+    let local = p.local_dir.as_ref().and_then(|d| path_by_dir.get(d));
+    let mut local_branches: BTreeSet<String> = BTreeSet::new();
+    let mut rows = Vec::new();
+
+    if let Some(repo) = local {
+        let current = git::current_branch(repo)?;
+        let wt = git::working_tree(repo)?;
+        let repo_remotes: BTreeSet<String> = git::remotes(repo)?.into_iter().collect();
+        let primary = shown.iter().find(|r| repo_remotes.contains(*r)).cloned();
+        for b in git::local_branches(repo)? {
+            local_branches.insert(b.clone());
+            let is_current = current.as_deref() == Some(b.as_str());
+            let cells = shown
+                .iter()
+                .map(|r| sync_cell(repo, &b, r, &repo_remotes))
+                .collect::<Result<Vec<_>>>()?;
+            let action = match &primary {
+                Some(r) => {
+                    let sync = git::branch_sync(repo, &b, r)?;
+                    let tree_clean = if is_current { wt.is_clean() } else { true };
+                    Some(action_label(sync, SyncAction::plan(sync, tree_clean)))
+                }
+                None => None,
+            };
+            let mut row = render::Row::new(String::new(), b.clone(), is_current);
+            row.wt = if is_current { Some(wt) } else { None };
+            row.remote_cells = cells;
+            row.action = action;
+            rows.push(row);
+        }
+    }
+
+    // Home-only branches (present on the home, not local) — one `ls-remote`.
+    if home_known && cfg.server_enabled() {
+        if let Ok(alias) = server::pick_alias(cfg, repos) {
+            let url = server::home_url(&alias, &cfg.server.root, &p.home_name);
+            if let Ok(home_branches) = git::ls_remote_heads(&url) {
+                for b in home_branches {
+                    if !local_branches.contains(&b) {
+                        let mut row = render::Row::new(String::new(), b, false);
+                        row.remote_cells = shown.iter().map(|_| None).collect();
+                        row.action = Some(if local.is_some() {
+                            "fetch".into()
+                        } else {
+                            "clone".into()
+                        });
+                        rows.push(row);
+                    }
+                }
+            }
+        }
+    }
+
+    let life = if home_known { p.lifecycle.label() } else { "?" };
+    println!("{}  [{}]", p.home_name, life);
+    println!("{}", render::detail_table(&shown, &rows, color));
+    Ok(())
+}
+
+/// The detail view's `sync` column text for a branch.
+fn action_label(sync: BranchSync, action: SyncAction) -> String {
+    match action {
+        SyncAction::UpToDate => "ok".into(),
+        SyncAction::Push => match sync {
+            BranchSync::NoRemoteBranch => "push (new)".into(),
+            BranchSync::Ahead(n) => format!("push ↑{n}"),
+            _ => "push".into(),
+        },
+        SyncAction::FastForward(n) => format!("ff ↓{n}"),
+        SyncAction::BlockedDirty(n) => format!("↓{n} dirty"),
+        SyncAction::Report => match sync {
+            BranchSync::Diverged { conflict: true, .. } => "CONFLICT".into(),
+            _ => "diverged".into(),
+        },
+    }
 }
 
 /// Color is on for a TTY unless `--no-color` or `NO_COLOR` is set; `CLICOLOR_FORCE`

@@ -1,4 +1,4 @@
-//! Render the status table. Pure string assembly over already-collected rows.
+//! Render the status tables. Pure string assembly over already-collected rows.
 //! Colors are emitted as ANSI escapes only when `color` is true; tabled's `ansi`
 //! feature measures display width correctly so colored cells still align.
 
@@ -6,7 +6,7 @@ use git_redundancy_core::{BranchSync, WorkingTree};
 use tabled::builder::Builder;
 use tabled::settings::Style;
 
-/// One line of the status table.
+/// One line of a status table.
 pub struct Row {
     pub repo: String,
     pub branch: String,
@@ -16,6 +16,31 @@ pub struct Row {
     /// Per-shown-remote cell, aligned with the `remotes` header order.
     /// `None` = the repo doesn't have that remote.
     pub remote_cells: Vec<Option<BranchSync>>,
+    /// Lifecycle label (`linked`/`local-only`/`home-only`/`?`), fleet view only,
+    /// shown on the repo's first row. Empty = don't render.
+    pub lifecycle: String,
+    /// "Others need attention" count (fleet, current-branch view): branches
+    /// besides the shown one that aren't up-to-date. `None`/0 = blank.
+    pub others: Option<u32>,
+    /// What `sync` would do for this branch (detail view only).
+    pub action: Option<String>,
+}
+
+impl Row {
+    /// A blank row with no lifecycle/others/action — the common case builders
+    /// fill in selectively.
+    pub fn new(repo: String, branch: String, is_current: bool) -> Self {
+        Row {
+            repo,
+            branch,
+            is_current,
+            wt: None,
+            remote_cells: Vec::new(),
+            lifecycle: String::new(),
+            others: None,
+            action: None,
+        }
+    }
 }
 
 /// Wrap `s` in an ANSI SGR sequence when `color` is on, otherwise return it plain.
@@ -67,12 +92,40 @@ fn remote_cell(sync: &Option<BranchSync>, color: bool) -> String {
     }
 }
 
-/// Build the table as a printable string.
+/// Color the lifecycle label by how much attention it wants.
+fn lifecycle_cell(label: &str, color: bool) -> String {
+    let code = match label {
+        "linked" => "2",      // dim — both sides present
+        "local-only" => "33", // yellow — needs `create`
+        "home-only" => "36",  // cyan — needs `clone`
+        _ => "2",             // "?" / unknown
+    };
+    paint(label, code, color)
+}
+
+/// The `+N⚠` "others need attention" cell (blank when nothing else outstanding).
+fn others_cell(others: Option<u32>, color: bool) -> String {
+    match others {
+        Some(n) if n > 0 => paint(&format!("+{n}⚠"), "33", color),
+        _ => String::new(),
+    }
+}
+
+fn branch_label(row: &Row) -> String {
+    if row.is_current {
+        format!("* {}", row.branch)
+    } else {
+        format!("  {}", row.branch)
+    }
+}
+
+/// The fleet table: one block per repo with a lifecycle cell and a `+N⚠` hint.
 pub fn table(remotes: &[String], rows: &[Row], color: bool) -> String {
     let mut builder = Builder::default();
 
     let mut header = vec![
         "Repo".to_string(),
+        "Life".to_string(),
         "Branch".to_string(),
         "S".to_string(),
         "U".to_string(),
@@ -80,21 +133,71 @@ pub fn table(remotes: &[String], rows: &[Row], color: bool) -> String {
         "Cf".to_string(),
     ];
     header.extend(remotes.iter().cloned());
+    header.push("⚠".to_string());
     builder.push_record(header);
 
     for row in rows {
         let (s, u, q, c) = wt_cells(row.wt, color);
-        let branch = if row.is_current {
-            format!("* {}", row.branch)
+        let life = if row.lifecycle.is_empty() {
+            String::new()
         } else {
-            format!("  {}", row.branch)
+            lifecycle_cell(&row.lifecycle, color)
         };
-        let mut record = vec![row.repo.clone(), branch, s, u, q, c];
+        let mut record = vec![row.repo.clone(), life, branch_label(row), s, u, q, c];
         record.extend(row.remote_cells.iter().map(|s| remote_cell(s, color)));
+        record.push(others_cell(row.others, color));
         builder.push_record(record);
     }
 
     let mut table = builder.build();
     table.with(Style::rounded());
     table.to_string()
+}
+
+/// The detail table (`gr status <repo>`): every branch of one repo with the
+/// action `sync` would take.
+pub fn detail_table(remotes: &[String], rows: &[Row], color: bool) -> String {
+    let mut builder = Builder::default();
+
+    let mut header = vec![
+        "Branch".to_string(),
+        "S".to_string(),
+        "U".to_string(),
+        "?".to_string(),
+        "Cf".to_string(),
+    ];
+    header.extend(remotes.iter().cloned());
+    header.push("sync".to_string());
+    builder.push_record(header);
+
+    for row in rows {
+        let (s, u, q, c) = wt_cells(row.wt, color);
+        let mut record = vec![branch_label(row), s, u, q, c];
+        record.extend(row.remote_cells.iter().map(|s| remote_cell(s, color)));
+        record.push(action_cell(row.action.as_deref(), color));
+        builder.push_record(record);
+    }
+
+    let mut table = builder.build();
+    table.with(Style::rounded());
+    table.to_string()
+}
+
+/// Color the sync-action label by direction/severity.
+fn action_cell(action: Option<&str>, color: bool) -> String {
+    let Some(a) = action else {
+        return String::new();
+    };
+    let code = if a.starts_with("push") {
+        "32" // green — backs up
+    } else if a.starts_with("ff") || a == "clone" {
+        "36" // cyan — pulls/fetches
+    } else if a.contains("CONFLICT") {
+        "1;31"
+    } else if a == "ok" {
+        "2"
+    } else {
+        "33" // diverged / dirty-blocked
+    };
+    paint(a, code, color)
 }

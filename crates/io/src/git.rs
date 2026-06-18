@@ -195,6 +195,28 @@ pub fn fetch(repo: &Path, remote: &str) -> Result<CmdOutcome> {
     Ok(outcome(git(repo, &["fetch", remote])?))
 }
 
+/// Branch names on a remote via `git ls-remote --heads <url>` (no clone needed),
+/// for listing a home's branches in the detail view (ADR-0014). `Err` if the
+/// remote is unreachable.
+pub fn ls_remote_heads(url: &str) -> Result<Vec<String>> {
+    let out = Command::new("git")
+        .args(["ls-remote", "--heads", url])
+        .output()
+        .with_context(|| format!("git ls-remote {url}"))?;
+    if !out.status.success() {
+        anyhow::bail!(
+            "ls-remote {url}: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        );
+    }
+    Ok(String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .filter_map(|l| l.split('\t').nth(1)) // "<sha>\trefs/heads/<branch>"
+        .filter_map(|r| r.strip_prefix("refs/heads/"))
+        .map(str::to_string)
+        .collect())
+}
+
 /// Fast-forward the **current** branch to `<remote>/<branch>` via
 /// `git merge --ff-only` — never a merge commit, never a non-ff. Caller must
 /// ensure `branch` is checked out and the tree is clean.

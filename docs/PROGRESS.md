@@ -61,8 +61,15 @@ Workspace: `crates/{core,io,cli}` (ADR-0002), `#![forbid(unsafe_code)]` througho
   (into-a-root only, drops the clone-minted `origin`), `gr sync` (easy-push ahead, ff-pull
   behind on a clean tree, `-i` confirm, `-a`, `--dry-run`) — all audited. Verified live against
   tenx (create→sync→clone round-trip) + hermetic sync tests.
-- Gates green: build, `clippy -D warnings`, `cargo test` (**52 tests**: core 21 · io 14 ·
-  cli 17); coverage ~76% line (pure `core` 98–100%; the SSH-execution paths in `server`/
+- **Status UX ([ADR-0014](adr/0014-status-ux-lifecycle-and-repo-detail.md)):** `gr status` is
+  now home-aware — a **lifecycle** column (`linked`/`local-only`/`home-only`/`?`), `home-only`
+  repos as rows, a **`+N⚠`** "others need attention" hint, and `--offline` + graceful
+  degradation. **`gr status <repo>`** (positional) is the all-branches **detail view** with a
+  `sync`-action column, resolving by home *or* directory name (so `gr status omarchy-setup`
+  finds `USCourts_setup`) and listing home-only branches via one `ls-remote`. Verified live.
+  *(`gr homes` is now superseded by `status`'s lifecycle column; kept as a quick diagnostic.)*
+- Gates green: build, `clippy -D warnings`, `cargo test` (**55 tests**: core 21 · io 14 ·
+  cli 20); coverage ~76% line (pure `core` 98–100%; the SSH-execution paths in `server`/
   lifecycle `create`/`clone` are live-verified, not hermetic).
 
 **Not yet:** the **first real `gr push` to tenx** (transport wired + verified; push queued);
@@ -199,9 +206,10 @@ Push committed work that is **easy** (fast-forwardable) only.
 
 Decided in [ADR-0012](adr/0012-home-inventory-server-side-bare-repos.md) /
 [0013](adr/0013-lifecycle-commands-create-clone-sync.md) /
-[0014](adr/0014-status-ux-lifecycle-and-repo-detail.md). **Status: ADR-0012 (home inventory,
-`gr homes`) and ADR-0013 (`gr create`/`clone`/`sync`) built & verified live; ADR-0014 (status
-UX) designed, not yet built.** Today `gr` only sees **local**
+[0014](adr/0014-status-ux-lifecycle-and-repo-detail.md). **Status: all three built & verified
+live — ADR-0012 (home inventory, `gr homes`), ADR-0013 (`gr create`/`clone`/`sync`), and
+ADR-0014 (home-aware `gr status` + `gr status <repo>` detail). Increment complete.** The
+starting point: `gr` once only saw **local**
 working copies; this increment teaches it about the **bare "home" repos** on tenx too, so a
 repo becomes *a name with up to two presences* — **local** (a working copy under a root) and
 **home** (`/data/git/<name>.git`) — giving each a lifecycle state:

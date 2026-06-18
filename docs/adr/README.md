@@ -59,3 +59,6 @@ where a decision touches a control we cite the 800-53 family inline.)
 | [0009](0009-ssh-transport-aliases-mdns-hostkey-pinned.md) | SSH transport via host aliases (mDNS, host-key pinned, FIPS enforced here) | Accepted |
 | [0010](0010-system-git-for-local-reads.md) | System `git` for local reads too (supersedes 0003) | Accepted |
 | [0011](0011-ci-fast-gates-plus-kani-every-push.md) | CI: fast gates always + Kani on every push (cached, separate job) | Accepted |
+| [0012](0012-home-inventory-server-side-bare-repos.md) | Home inventory: discover the bare home repos on tenx, not just local working copies | Accepted |
+| [0013](0013-lifecycle-commands-create-clone-sync.md) | Lifecycle commands: `create` / `clone` / `sync` for the local↔home gap | Accepted |
+| [0014](0014-status-ux-lifecycle-and-repo-detail.md) | Status UX: lifecycle in the fleet view, an "others" indicator, and a repo detail view | Accepted |

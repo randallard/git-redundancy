@@ -23,6 +23,11 @@ algorithms, fail-closed) now, validated module deferred to a certified platform/
 all-branches views, never auto-commit ([0006](adr/0006-command-scope-current-and-all-branches.md)).
 GUI later via Tauri, keep the Rust core ([0007](adr/0007-future-gui-tauri-keep-rust-core.md)).
 OS is Omarchy on both client and server ([0008](adr/0008-os-omarchy-on-both-ends.md)).
+**Next increment designed (not yet built):** home-aware lifecycle — discover the bare home
+repos on tenx ([0012](adr/0012-home-inventory-server-side-bare-repos.md)), `create`/`clone`/
+`sync` to close the local↔home gap ([0013](adr/0013-lifecycle-commands-create-clone-sync.md)),
+and a lifecycle-aware status with a `+N⚠` indicator and `gr status <repo>` detail
+([0014](adr/0014-status-ux-lifecycle-and-repo-detail.md)).
 
 **Repo:** `git@github.com:randallard/git-redundancy.git` — cloned, initial commit `59dcf06`
 (docs), branch `main`. Name settled as `git-redundancy`.
@@ -173,6 +178,42 @@ Push committed work that is **easy** (fast-forwardable) only.
 - Prints a per-repo result summary: `pushed N` · `up-to-date` · `SKIPPED (diverged)` ·
   `DIRTY (committed pushed, M files left uncommitted)`.
 
+### Next increment — repo lifecycle & home-aware status (designed, not yet built)
+
+Decided in [ADR-0012](adr/0012-home-inventory-server-side-bare-repos.md) /
+[0013](adr/0013-lifecycle-commands-create-clone-sync.md) /
+[0014](adr/0014-status-ux-lifecycle-and-repo-detail.md). Today `gr` only sees **local**
+working copies; this increment teaches it about the **bare "home" repos** on tenx too, so a
+repo becomes *a name with up to two presences* — **local** (a working copy under a root) and
+**home** (`/data/git/<name>.git`) — giving each a lifecycle state:
+
+| State | Meaning | Verb |
+|---|---|---|
+| `local-only` | working copy here, no bare home yet | `gr create` |
+| `home-only`  | bare home on tenx, never cloned here | `gr clone` |
+| `linked`     | both exist → look at per-branch drift | `gr sync` |
+
+Identity is the **home name** (derived from the `data` remote URL, so `USCourts_setup` ↔
+`omarchy-setup` just works); `data`/`data-lan` dedupe to one home (ADR-0012).
+
+- **`gr create [name]`** — init the bare home on tenx, set its `HEAD`, wire `data`/`data-lan`,
+  push. Refuses if a home already exists. Audited.
+- **`gr clone <name> [dir]`** — clone a home-only repo; target **must land inside a
+  configured root** (default `roots[0]/<name>`) so it's auto-discovered, else `gr` lists the
+  roots + how to add one and stops. Drops the clone-minted `origin` (kept cloud-only). Audited.
+- **`gr sync [repo...]`** — reconcile **easy work only**: easy-push ahead/new, **ff-pull
+  behind on a clean tree**, diverged/CONFLICT reported never forced. Default prints + audits
+  each action; `-i/--interactive` confirms per branch; `-a` = full all-branches run;
+  `--dry-run` previews. (A superset of `push` — adds the pull direction; the one place `gr`
+  writes a working tree, gated to clean + true fast-forward.)
+- **`gr status`** gains a **lifecycle** cell, shows `home-only` repos as rows, and a compact
+  **`+N⚠`** "others need attention" hint (count of *other* branches ahead/behind/diverged/
+  local-only/home-only — so a clean current branch can't hide un-backed-up work).
+  **`gr status <repo>`** (positional) is the one-repo, all-branches **detail view** — works
+  for local *or* home-only repos and previews what `gr sync` would do per branch.
+- Reads **degrade** when tenx is unreachable (home cells `?`, exit 0); `--offline` skips the
+  network. Lifecycle commands require the server and fail loudly (ADR-0012 §5).
+
 ---
 
 ## 5. Config
@@ -205,6 +246,10 @@ default_remotes = ["data-lan", "data"]
 [transport]              # optional auto-failover for push (ADR-0009 aliases)
 auto = true
 order = ["data-lan", "data"]
+
+[server]                 # home-repo inventory (ADR-0012) — enables lifecycle/home-aware status
+root = "/data/git"       # where the bare repos live on tenx
+# aliases = ["tenx-lan", "tenx-ts"]   # default: reuse transport.order (LAN → Tailscale)
 
 [audit]
 log = "~/.local/state/git-redundancy/audit.log"   # AU: append-only action log
@@ -252,6 +297,13 @@ Path A is enforced ([0009](adr/0009-ssh-transport-aliases-mdns-hostkey-pinned.md
       configured; repos are discovered *within* those roots (plus optional explicit `repos`
       and `exclude` lists). No implicit/global filesystem scan, no built-in default path —
       machine-specific roots live in each box's config. See §5.
+- [x] ~~**Home-aware lifecycle & status** (next increment)~~ → settled in
+      [ADR-0012](adr/0012-home-inventory-server-side-bare-repos.md) (home inventory, identity
+      by home name, `[server]` config, graceful degradation),
+      [0013](adr/0013-lifecycle-commands-create-clone-sync.md) (`create`/`clone`/`sync`, the
+      ff-pull-on-clean-tree extension of ADR-0006) and
+      [0014](adr/0014-status-ux-lifecycle-and-repo-detail.md) (lifecycle column, `+N⚠`
+      indicator, positional `gr status <repo>` detail). Design locked; implementation pending.
 
 **Implementation prerequisites** (operational, not decisions — tracked in
 [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md)): set the DHCP reservation for `tenx-rltec` and

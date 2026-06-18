@@ -1,6 +1,6 @@
 # 2026-06-17 — Kickoff & design
 
-**Documents:** initial commit `d6b11d7` ("initial commit") — the `docs/` design set.
+**Documents:** initial commit `59dcf06` ("initial commit") — the `docs/` design set.
 **Status:** design complete, no code yet.
 
 ## Where this came from

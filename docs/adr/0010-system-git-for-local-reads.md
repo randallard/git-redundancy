@@ -6,7 +6,7 @@
 
 ## Context
 ADR-0003 chose a hybrid: `gix` (pure Rust) for local reads, system `git` only for network
-ops + `merge-tree`. The first implementation (`fafaa40`) instead used system `git` for
+ops + `merge-tree`. The first implementation (`4a330c9`) instead used system `git` for
 *both* reads and network. Reviewing the deviation, the original premise no longer holds:
 
 - **System `git` ≥ 2.38 is already mandatory** — ADR-0003 itself requires it for `push` and

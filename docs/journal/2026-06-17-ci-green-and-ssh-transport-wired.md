@@ -1,8 +1,8 @@
 # 2026-06-17 — CI green & SSH transport wired to tenx
 
 **Documents:** the milestone since the [tests/proofs/CI entry](2026-06-17-tests-proofs-and-ci.md)
-(`ac905a0`): CI implemented and **green** (`2c0941c` fmt, `4a86d13` CI workflows,
-`5c5fbc2` progress), plus the SSH transport wiring to `tenx-rltec` — which is machine-local
+(`971e859`): CI implemented and **green** (`15c4230` fmt, `66f6dea` CI workflows,
+`d532f24` progress), plus the SSH transport wiring to `tenx-rltec` — which is machine-local
 environment work, now captured reproducibly in `docs/SETUP.md` + `docs/examples/tenx.conf`
 (added in this commit). Fourth entry today.
 **Status:** the end-to-end backup path is wired and FIPS-verified; the **first real

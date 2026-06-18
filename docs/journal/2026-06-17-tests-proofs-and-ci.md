@@ -1,25 +1,25 @@
 # 2026-06-17 — Tests, proofs, and the CI decision
 
-**Documents:** commit `c4930ad` (Kani proofs + ADR-0011); also covers, as a milestone since
-the [first-implementation entry](2026-06-17-first-implementation.md) (`cf31b00`), commits
-`3d25772` (gix reconciliation) and `3f945de` (integration tests). Third entry today.
+**Documents:** commit `cf409ce` (Kani proofs + ADR-0011); also covers, as a milestone since
+the [first-implementation entry](2026-06-17-first-implementation.md) (`058f316`), commits
+`72647e2` (gix reconciliation) and `fdee250` (integration tests). Third entry today.
 **Status:** status/push behavior now pinned by hermetic tests; the core safety invariant is
 *formally proven*; the gix deviation is reconciled; CI strategy decided but not yet wired.
 
 ## What happened since the first implementation
 
-- **Reconciled the gix/ADR-0003 deviation (`3d25772`).** The first implementation shelled
+- **Reconciled the gix/ADR-0003 deviation (`72647e2`).** The first implementation shelled
   out to system `git` for local reads, not `gix` as ADR-0003 specified. On review the
   premise had flipped: `git` is already mandatory (push + `merge-tree`), so `gix` would
   *enlarge* the supply-chain graph rather than shrink the trust base, and system `git` gives
   exact config fidelity and one code path. Decided in the code's favor — **ADR-0010**
   supersedes 0003; `git2`/libgit2 stays rejected; the single-network-chokepoint holds.
-- **Integration tests (`3f945de`).** 8 hermetic `assert_cmd` cases (isolated HOME +
+- **Integration tests (`fdee250`).** 8 hermetic `assert_cmd` cases (isolated HOME +
   disabled global/system git config + isolated XDG) codify the lifecycle we'd been checking
   by hand: empty-config, new-branch, dry-run-changes-nothing-and-not-audited, push →
   up-to-date with failover + audit, fast-forward, **diverged-CONFLICT skip (exit 0)**,
   dirty-warn, and **real-failure exit 1**.
-- **Kani proofs (`c4930ad`), verified green.** 3 cfg-gated harnesses over the integer
+- **Kani proofs (`cf409ce`), verified green.** 3 cfg-gated harnesses over the integer
   decision logic — headline: **`is_easy_push ⇒ behind == 0` proven for all `u32`**, the
   formal guarantee that `gr push` can never fast-forward over commits it doesn't have. Plus
   `classify` totality and the easy-push decision table. `cargo kani -p git-redundancy-core`

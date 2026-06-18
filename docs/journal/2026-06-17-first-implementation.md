@@ -1,7 +1,7 @@
 # 2026-06-17 — First implementation (status, push, audit)
 
-**Documents:** commit `fafaa40` ("initial implementation"). Follows `f7dee47` (journal init)
-and `d6b11d7` (design). Second entry today — see the
+**Documents:** commit `4a330c9` ("initial implementation"). Follows `e33c60c` (journal init)
+and `59dcf06` (design). Second entry today — see the
 [kickoff entry](2026-06-17-kickoff-and-design.md) for the design this builds on.
 **Status:** first working increment — `gr status` and `gr push` work end-to-end with audit
 logging. Not yet wired to the live tenx SSH aliases, so no real backup to tenx has run yet.

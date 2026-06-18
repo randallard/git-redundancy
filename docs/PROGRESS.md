@@ -24,7 +24,7 @@ all-branches views, never auto-commit ([0006](adr/0006-command-scope-current-and
 GUI later via Tauri, keep the Rust core ([0007](adr/0007-future-gui-tauri-keep-rust-core.md)).
 OS is Omarchy on both client and server ([0008](adr/0008-os-omarchy-on-both-ends.md)).
 
-**Repo:** `git@github.com:randallard/git-redundancy.git` — cloned, initial commit `d6b11d7`
+**Repo:** `git@github.com:randallard/git-redundancy.git` — cloned, initial commit `59dcf06`
 (docs), branch `main`. Name settled as `git-redundancy`.
 
 ## Implementation status

@@ -68,16 +68,18 @@ Workspace: `crates/{core,io,cli}` (ADR-0002), `#![forbid(unsafe_code)]` througho
   `sync`-action column, resolving by home *or* directory name (so `gr status omarchy-setup`
   finds `USCourts_setup`) and listing home-only branches via one `ls-remote`. Verified live.
   *(`gr homes` is now superseded by `status`'s lifecycle column; kept as a quick diagnostic.)*
-- Gates green: build, `clippy -D warnings`, `cargo test` (**55 tests**: core 21 · io 14 ·
-  cli 20); coverage ~76% line (pure `core` 98–100%; the SSH-execution paths in `server`/
-  lifecycle `create`/`clone` are live-verified, not hermetic).
+- Gates green: build, `clippy -D warnings`, `cargo test` (**58 tests**: core 21 · io 15 ·
+  cli 20 · render 2); coverage ~76% line (pure `core` 98–100%; the SSH-execution paths in
+  `server`/lifecycle `create`/`clone` are live-verified, not hermetic).
 
 **Not yet:** *mandatory* FIPS (tenx-side `sshd`/crypto-policy — the deferred tier); the
 operational item of keeping tenx awake/reachable at day's end; a future GUI (Tauri).
 
-**Recently done:** the real backup path to tenx (the `create`→`sync`→`clone` round-trips
-push live); **`gr status --json`** (machine-readable output, ADR-0006); **CI supply-chain +
-coverage gates** — `cargo-vet` (`supply-chain/` baseline) + a CycloneDX SBOM artifact +
+**Recently done:** a **`[backup]` server + `Bkp` column** in `gr status` — per-repo backup
+presence (`ok`/`miss`/`?`) when a second home server is configured ([ADR-0015](adr/0015-backup-server-presence-column.md));
+the real backup path to tenx (the `create`→`sync`→`clone` round-trips push live);
+**`gr status --json`** (machine-readable output, ADR-0006); **CI supply-chain + coverage
+gates** — `cargo-vet` (`supply-chain/` baseline) + a CycloneDX SBOM artifact +
 `cargo llvm-cov --fail-under-lines 70`; `gr homes` retired into a `status` alias.
 
 **Done since:** integration tests (`assert_cmd`, 8 hermetic cases); `kani` proofs written
@@ -178,6 +180,7 @@ Columns:
 |---|---|---|
 | Repo | dir name (home name for home-only rows) | discovery / inventory |
 | Life | lifecycle: `linked` / `local-only` / `home-only` / `?` (ADR-0012/0014) | inventory |
+| Bkp | backup presence: `ok` / `miss` / `?` — only when `[backup]` is set (ADR-0015) | backup inventory |
 | Branch | current branch (or detached) | `HEAD` |
 | Staged / Unstaged / Untracked / Cf | index vs worktree vs untracked vs conflicts | `git status --porcelain=v2 -z` |
 | Per-remote `↑ahead / ↓behind` | commits local-vs-remote-tracking, per configured remote | rev-list left-right |

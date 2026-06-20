@@ -25,8 +25,10 @@ without clobbering anything. That's `gr`.
 - **Home-aware status table** — per repo: a **lifecycle** cell (`linked` / `local-only` /
   `home-only`), branch, working-tree state (staged / unstaged / untracked / conflicts),
   per-remote ahead/behind and merge difficulty (`new` / `ok` / `↑n` / `↓n` / `diverged` /
-  `CONFLICT`), and a `+N⚠` hint for *other* branches needing attention. `gr status <repo>`
-  drills into one repo, every branch, previewing what `sync` would do.
+  `CONFLICT`), and a `+N⚠` hint for *other* branches needing attention. With a `[backup]`
+  server configured, a **`Bkp`** cell shows whether each repo is mirrored to the backup too
+  (`ok` / `miss` / `?`). `gr status <repo>` drills into one repo, every branch, previewing
+  what `sync` would do.
 - **Lifecycle commands** — `create` a bare home for a local repo, `clone` a home you don't
   have yet, or `sync` to reconcile: easy-push ahead, fast-forward-pull behind (clean tree
   only), report diverged. `-i` confirms each action.

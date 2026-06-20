@@ -22,6 +22,32 @@ const SSH_CONNECT_TIMEOUT: &str = "5";
 pub struct Survey {
     pub presences: Vec<RepoPresence>,
     pub reachable: bool,
+    /// Backup home server, when `[backup]` is configured. `None` = not configured.
+    pub backup: Option<BackupState>,
+}
+
+/// The backup server's home listing. `reachable = false` means it was configured
+/// but could not be listed (so per-repo backup state shows `?`).
+pub struct BackupState {
+    pub homes: Vec<String>,
+    pub reachable: bool,
+}
+
+/// Query the backup home server's listing, when `[backup]` is configured.
+fn survey_backup(cfg: &Config) -> Option<BackupState> {
+    if !cfg.backup_enabled() {
+        return None;
+    }
+    Some(match list_homes(&cfg.backup.aliases, &cfg.backup.root) {
+        Ok(homes) => BackupState {
+            homes,
+            reachable: true,
+        },
+        Err(_) => BackupState {
+            homes: Vec::new(),
+            reachable: false,
+        },
+    })
 }
 
 /// The remotes that name the transport paths to the home, in preference order
@@ -141,11 +167,13 @@ fn local_repos(cfg: &Config, repos: &[PathBuf]) -> Vec<LocalRepo> {
 pub fn survey(cfg: &Config) -> Survey {
     let repos = discovery::discover(cfg);
     let locals = local_repos(cfg, &repos);
+    let backup = survey_backup(cfg);
 
     if !cfg.server_enabled() {
         return Survey {
             presences: join_presences(&locals, &[]),
             reachable: false,
+            backup,
         };
     }
 
@@ -154,10 +182,12 @@ pub fn survey(cfg: &Config) -> Survey {
         Ok(homes) => Survey {
             presences: join_presences(&locals, &homes),
             reachable: true,
+            backup,
         },
         Err(_) => Survey {
             presences: join_presences(&locals, &[]),
             reachable: false,
+            backup,
         },
     }
 }

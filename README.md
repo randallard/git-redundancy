@@ -91,6 +91,13 @@ order = ["data-lan", "data"]
 root = "/data/git"               # where the bare repos live on the server
 aliases = ["tenx-lan", "tenx-ts"] # SSH aliases to reach it (else derived from your remotes)
 
+# Optional: a second "backup" home server that the primary replicates to. When set,
+# `gr status` shows a `Bkp` column — is each repo's home present on the backup too?
+# (`ok` / `miss` / `?`). Presence only; replication lag is the backup host's own monitor.
+[backup]
+root = "/data/git"
+aliases = ["acer-lan", "acer-ts"] # explicit (no per-repo remote to derive them from)
+
 # Audit log location (on by default).
 [audit]
 enabled = true

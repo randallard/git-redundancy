@@ -20,6 +20,11 @@ pub struct Config {
     pub transport: Transport,
     /// Server-side bare-repo home inventory (ADR-0012).
     pub server: Server,
+    /// Optional second "backup" home server (a replicated mirror of `server`).
+    /// When set, `gr status` shows a `Bkp` column: is each repo's home present on
+    /// the backup too? Presence only — replication lag / snapshot freshness are the
+    /// backup host's own monitor (e.g. a fleet healthcheck), not observable here.
+    pub backup: Server,
     /// Audit logging (ADR-0004, AU).
     pub audit: AuditConfig,
 }
@@ -114,6 +119,12 @@ impl Config {
     pub fn server_enabled(&self) -> bool {
         !self.server.root.as_os_str().is_empty()
     }
+
+    /// Is a backup home server configured? It needs both a `root` and explicit
+    /// `aliases` (there's no per-repo backup remote to derive them from).
+    pub fn backup_enabled(&self) -> bool {
+        !self.backup.root.as_os_str().is_empty() && !self.backup.aliases.is_empty()
+    }
 }
 
 #[cfg(test)]
@@ -154,5 +165,25 @@ mod tests {
         assert!(cfg.server_enabled());
         assert_eq!(cfg.server.root, PathBuf::from("/data/git"));
         assert_eq!(cfg.server.aliases, vec!["tenx-lan", "tenx-ts"]);
+    }
+
+    #[test]
+    fn backup_block_parses_and_needs_root_plus_aliases() {
+        assert!(!Config::default().backup_enabled());
+
+        // root without aliases is not enough (nothing to derive aliases from).
+        let no_aliases: Config = toml::from_str("[backup]\nroot = \"/data/git\"\n").unwrap();
+        assert!(!no_aliases.backup_enabled());
+
+        let toml = r#"
+            roots = ["/data/Development"]
+            [backup]
+            root = "/data/git"
+            aliases = ["acer-lan", "acer-ts"]
+        "#;
+        let cfg: Config = toml::from_str(toml).unwrap();
+        assert!(cfg.backup_enabled());
+        assert_eq!(cfg.backup.root, PathBuf::from("/data/git"));
+        assert_eq!(cfg.backup.aliases, vec!["acer-lan", "acer-ts"]);
     }
 }

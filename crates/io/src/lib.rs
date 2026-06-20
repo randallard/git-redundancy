@@ -15,4 +15,4 @@ pub mod server;
 pub use audit::Audit;
 pub use config::Config;
 pub use discovery::discover;
-pub use inventory::{survey, Survey};
+pub use inventory::{survey, BackupState, Survey};

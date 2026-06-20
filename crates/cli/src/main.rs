@@ -162,6 +162,9 @@ fn status_survey(cfg: &Config, offline: bool) -> (git_redundancy_io::Survey, boo
     if offline || !cfg.server_enabled() {
         let mut local_cfg = cfg.clone();
         local_cfg.server.root.clear();
+        if offline {
+            local_cfg.backup.root.clear(); // --offline skips the backup query too
+        }
         (git_redundancy_io::survey(&local_cfg), false)
     } else {
         let s = git_redundancy_io::survey(cfg);
@@ -213,6 +216,7 @@ fn run_status(args: &StatusArgs) -> Result<()> {
         return Ok(());
     }
 
+    let show_backup = survey.backup.is_some();
     let mut rows = Vec::new();
     for p in &survey.presences {
         let life = if home_known {
@@ -220,6 +224,7 @@ fn run_status(args: &StatusArgs) -> Result<()> {
         } else {
             "?".to_string()
         };
+        let backup = backup_label(&survey.backup, &p.home_name);
         match p.local_dir.as_ref().and_then(|d| path_by_dir.get(d)) {
             // Local repos display their on-disk directory name; the home name is
             // the internal identity (and the `gr status <name>` detail header).
@@ -227,6 +232,7 @@ fn run_status(args: &StatusArgs) -> Result<()> {
                 repo,
                 &file_name_string(repo),
                 &life,
+                &backup,
                 &shown,
                 args,
                 &mut rows,
@@ -235,6 +241,7 @@ fn run_status(args: &StatusArgs) -> Result<()> {
                 // home-only repo (only present when the home side is known).
                 let mut row = render::Row::new(p.home_name.clone(), "(home)".into(), false);
                 row.lifecycle = life;
+                row.backup = backup;
                 row.remote_cells = shown.iter().map(|_| None).collect();
                 rows.push(row);
             }
@@ -261,9 +268,26 @@ fn run_status(args: &StatusArgs) -> Result<()> {
     }
     println!(
         "{}",
-        render::table(&shown, &rows, color_enabled(args.no_color))
+        render::table(&shown, &rows, color_enabled(args.no_color), show_backup)
     );
     Ok(())
+}
+
+/// Per-repo backup-presence label for the `Bkp` column: `ok` if the repo's home
+/// is on the backup server, `miss` if not, `?` if the backup is unreachable, and
+/// `""` (no cell) when no `[backup]` is configured.
+fn backup_label(backup: &Option<git_redundancy_io::BackupState>, home_name: &str) -> String {
+    match backup {
+        None => String::new(),
+        Some(b) if !b.reachable => "?".to_string(),
+        Some(b) => {
+            if b.homes.iter().any(|h| h == home_name) {
+                "ok".to_string()
+            } else {
+                "miss".to_string()
+            }
+        }
+    }
 }
 
 /// Build the fleet rows for one local repo: branch rows + lifecycle on the first
@@ -272,6 +296,7 @@ fn build_local_rows(
     repo: &Path,
     display: &str,
     life: &str,
+    backup: &str,
     shown: &[String],
     args: &StatusArgs,
     rows: &mut Vec<render::Row>,
@@ -292,6 +317,7 @@ fn build_local_rows(
             true,
         );
         row.lifecycle = life.to_string();
+        row.backup = backup.to_string();
         row.wt = Some(wt);
         row.remote_cells = shown.iter().map(|_| None).collect();
         rows.push(row);
@@ -323,6 +349,7 @@ fn build_local_rows(
         );
         if i == 0 {
             row.lifecycle = life.to_string();
+            row.backup = backup.to_string();
         }
         row.wt = if is_current { Some(wt) } else { None };
         row.remote_cells = cells;

@@ -17,6 +17,9 @@ pub struct Fleet<'a> {
 pub struct RepoJson {
     pub repo: String,
     pub lifecycle: String,
+    /// Backup-server presence (`ok`/`miss`/`?`) when a `[backup]` is configured.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub backup: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub others: Option<u32>,
     pub branches: Vec<BranchJson>,
@@ -108,6 +111,7 @@ pub fn fleet<'a>(remotes: &'a [String], rows: &[Row]) -> Fleet<'a> {
             repos.push(RepoJson {
                 repo: row.repo.clone(),
                 lifecycle: row.lifecycle.clone(),
+                backup: (!row.backup.is_empty()).then(|| row.backup.clone()),
                 others: None,
                 branches: Vec::new(),
             });
@@ -130,6 +134,7 @@ pub fn detail(repo: &str, lifecycle: &str, remotes: &[String], rows: &[Row]) -> 
     RepoJson {
         repo: repo.to_string(),
         lifecycle: lifecycle.to_string(),
+        backup: None,
         others: None,
         branches: rows.iter().map(|r| branch_json(remotes, r)).collect(),
     }

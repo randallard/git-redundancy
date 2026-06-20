@@ -19,6 +19,9 @@ pub struct Row {
     /// Lifecycle label (`linked`/`local-only`/`home-only`/`?`), fleet view only,
     /// shown on the repo's first row. Empty = don't render.
     pub lifecycle: String,
+    /// Backup-server presence (`ok`/`miss`/`?`), fleet view only, shown on the
+    /// repo's first row when a `[backup]` server is configured. Empty = no cell.
+    pub backup: String,
     /// "Others need attention" count (fleet, current-branch view): branches
     /// besides the shown one that aren't up-to-date. `None`/0 = blank.
     pub others: Option<u32>,
@@ -37,6 +40,7 @@ impl Row {
             wt: None,
             remote_cells: Vec::new(),
             lifecycle: String::new(),
+            backup: String::new(),
             others: None,
             action: None,
         }
@@ -103,6 +107,17 @@ fn lifecycle_cell(label: &str, color: bool) -> String {
     paint(label, code, color)
 }
 
+/// Color the backup-presence cell: `ok` dim-green (mirrored), `miss` red (a gap
+/// in redundancy), `?` dim (backup unreachable).
+fn backup_cell(label: &str, color: bool) -> String {
+    let code = match label {
+        "ok" => "32",   // green — present on the backup too
+        "miss" => "31", // red — NOT on the backup (redundancy gap)
+        _ => "2",       // "?" / unknown — dim
+    };
+    paint(label, code, color)
+}
+
 /// The `+N⚠` "others need attention" cell (blank when nothing else outstanding).
 fn others_cell(others: Option<u32>, color: bool) -> String {
     match others {
@@ -120,18 +135,21 @@ fn branch_label(row: &Row) -> String {
 }
 
 /// The fleet table: one block per repo with a lifecycle cell and a `+N⚠` hint.
-pub fn table(remotes: &[String], rows: &[Row], color: bool) -> String {
+/// `show_backup` adds a `Bkp` column (only when a `[backup]` server is configured).
+pub fn table(remotes: &[String], rows: &[Row], color: bool, show_backup: bool) -> String {
     let mut builder = Builder::default();
 
-    let mut header = vec![
-        "Repo".to_string(),
-        "Life".to_string(),
+    let mut header = vec!["Repo".to_string(), "Life".to_string()];
+    if show_backup {
+        header.push("Bkp".to_string());
+    }
+    header.extend([
         "Branch".to_string(),
         "S".to_string(),
         "U".to_string(),
         "?".to_string(),
         "Cf".to_string(),
-    ];
+    ]);
     header.extend(remotes.iter().cloned());
     header.push("⚠".to_string());
     builder.push_record(header);
@@ -143,7 +161,16 @@ pub fn table(remotes: &[String], rows: &[Row], color: bool) -> String {
         } else {
             lifecycle_cell(&row.lifecycle, color)
         };
-        let mut record = vec![row.repo.clone(), life, branch_label(row), s, u, q, c];
+        let mut record = vec![row.repo.clone(), life];
+        if show_backup {
+            let bkp = if row.backup.is_empty() {
+                String::new()
+            } else {
+                backup_cell(&row.backup, color)
+            };
+            record.push(bkp);
+        }
+        record.extend([branch_label(row), s, u, q, c]);
         record.extend(row.remote_cells.iter().map(|s| remote_cell(s, color)));
         record.push(others_cell(row.others, color));
         builder.push_record(record);
@@ -200,4 +227,38 @@ fn action_cell(action: Option<&str>, color: bool) -> String {
         "33" // diverged / dirty-blocked
     };
     paint(a, code, color)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn fleet_row(repo: &str, backup: &str) -> Row {
+        let mut r = Row::new(repo.to_string(), "main".to_string(), true);
+        r.lifecycle = "linked".to_string();
+        r.backup = backup.to_string();
+        r
+    }
+
+    #[test]
+    fn backup_column_only_when_requested() {
+        let rows = vec![fleet_row("a", "ok"), fleet_row("b", "miss")];
+
+        // show_backup = true → a `Bkp` header and the per-repo labels appear.
+        let with = table(&[], &rows, false, true);
+        assert!(with.contains("Bkp"), "expected Bkp header:\n{with}");
+        assert!(with.contains("ok") && with.contains("miss"));
+
+        // show_backup = false → no column even though rows carry a backup label.
+        let without = table(&[], &rows, false, false);
+        assert!(!without.contains("Bkp"));
+        assert!(!without.contains("miss"));
+    }
+
+    #[test]
+    fn backup_cell_unreachable_is_question_mark() {
+        let rows = vec![fleet_row("a", "?")];
+        let out = table(&[], &rows, false, true);
+        assert!(out.contains('?'));
+    }
 }

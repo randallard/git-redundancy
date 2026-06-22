@@ -12,6 +12,23 @@ end-to-end (with audit logging); not yet wired to the live tenx SSH aliases. Dec
 recorded as ADRs in [`docs/adr/`](adr/README.md) — read those for the authoritative *why*;
 this doc is the working overview. See [Implementation status](#implementation-status) below.
 
+**Where we are (2026-06-22).** The lifecycle surface is feature-complete for the two-box
+promise: **create / clone / sync / onboard / repoint**. Just landed and pushed — `gr onboard`
+(the ADR-0017 guided y/n/s/q walk + config `ignore` list) and `gr repoint` (ADR-0018,
+backup-only homes into the current topology behind a never-lose-history gate). **Open items
+before this increment is truly "done":**
+- **CI is red — coverage gate is the open call.** The post-push run failed two jobs: **fmt**
+  (a pre-existing `io/server.rs` rustfmt drift from the ADR-0016 push — now fixed) and the
+  **coverage gate** (line coverage **59.95%** vs the `--fail-under-lines 70` floor). onboard +
+  repoint roughly doubled the SSH-orchestration code (`server.rs` ~50%, `git.rs` ~56%,
+  `lifecycle.rs`), and those paths only run against a live server — the same "verified by hand"
+  reality the gate's own comment already concedes. **Decision pending:** lower the floor to
+  match (~58%), *exclude* the network-shell files and keep a high bar (70%+) on the testable
+  core, or invest in an SSH mock to claw coverage back. This is next on the plate.
+- **Live round-trip for `repoint` still owed** — the gate + five-step flip have only hermetic
+  guard coverage; recommended: `gr repoint --dry-run`, then one throwaway backup-only repo,
+  before the original 7.
+
 **Decisions locked (see ADRs):** Rust CLI ([0001](adr/0001-use-rust-for-the-cli.md)) ·
 functional core / imperative shell ([0002](adr/0002-functional-core-imperative-shell.md)) ·
 git backend: system `git` for reads **and** network, core stays pure

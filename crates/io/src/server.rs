@@ -62,7 +62,9 @@ fn run_with_stdin(alias: &str, remote_cmd: &str, stdin: &str) -> Result<CmdOutco
         .context("ssh stdin")?
         .write_all(stdin.as_bytes())
         .with_context(|| format!("writing to ssh {alias}"))?;
-    let out = child.wait_with_output().with_context(|| format!("ssh {alias}"))?;
+    let out = child
+        .wait_with_output()
+        .with_context(|| format!("ssh {alias}"))?;
     Ok(CmdOutcome {
         success: out.status.success(),
         stderr: String::from_utf8_lossy(&out.stderr).trim().to_string(),
@@ -73,7 +75,9 @@ fn run_with_stdin(alias: &str, remote_cmd: &str, stdin: &str) -> Result<CmdOutco
 /// `Err` when none connect (server unreachable).
 fn first_live_alias(aliases: &[String], what: &str) -> Result<String> {
     if aliases.is_empty() {
-        anyhow::bail!("no SSH aliases to reach the {what} (set its `aliases` or wire a repo's remotes)");
+        anyhow::bail!(
+            "no SSH aliases to reach the {what} (set its `aliases` or wire a repo's remotes)"
+        );
     }
     for alias in aliases {
         if run(alias, "true").map(|o| o.success).unwrap_or(false) {

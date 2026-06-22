@@ -74,3 +74,23 @@ making the primary authoritative **without losing what the backup has**.
   walk's `r`. After that, the lifecycle surface (create / clone / sync / onboard / repoint) is
   feature-complete for the two-box promise; remaining work is assurance (live-path coverage) and
   the parked backup *sync-state* surfacing (ADR-0016's follow-up).
+
+## Postscript — CI after the push (commit `74f6833`)
+
+The push went red. Two jobs failed, and they're worth recording because the second is a real
+decision, not a slip:
+
+- **fmt** — `cargo fmt --all --check` flagged `io/server.rs:62`. This was the **pre-existing
+  drift** the previous two entries called out as "left untouched": CI's rustfmt agrees with my
+  local one, so it was never cosmetic — it had been failing since the **ADR-0016 push
+  (`36e3c21`)**. My caution about not reformatting a file I didn't "own" was the wrong call; the
+  committed code was simply not canonical. **Fixed** by running `cargo fmt` (the two rewrapped
+  lines + the `remove_hook` addition are now clean).
+- **coverage gate** — line coverage **59.95%** against the `--fail-under-lines 70` floor.
+  onboard + repoint roughly doubled the SSH-orchestration surface (`server.rs` ~50%, `git.rs`
+  ~56%, `lifecycle.rs`), none of it hermetically testable without a mock — the exact
+  "verified by hand" caveat the gate's own comment already carries. **This is the open
+  deliberation** (see PROGRESS "Where we are"): lower the floor to ~58%, *exclude* the
+  network-shell files and hold a high bar on the testable core, or build an SSH stub to claw
+  coverage back. Parked here deliberately — it's a quality-bar call, not a code fix, and it's
+  next on the plate. (kani proofs + supply-chain jobs stayed green.)

@@ -271,6 +271,32 @@ fn ignored_repo_shows_ignored_lifecycle_in_status() {
 }
 
 #[test]
+fn repoint_without_server_config_fails_with_guidance() {
+    let fx = Fixture::new(); // default config has no [server]
+    fx.gr()
+        .args(["repoint", "myrepo"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("no [server] configured"));
+}
+
+#[test]
+fn repoint_without_backup_is_refused() {
+    let fx = Fixture::new();
+    // [server] but no [backup]: repoint re-roles the backup home, so it refuses
+    // before touching the network (ADR-0018).
+    fx.write_config(&format!(
+        "roots = [\"{}\"]\n[server]\nroot = \"/data/git\"\naliases = [\"none-such\"]\n",
+        fx.dev.display(),
+    ));
+    fx.gr()
+        .args(["repoint", "myrepo"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("needs a [backup]"));
+}
+
+#[test]
 fn clone_target_outside_roots_is_refused_with_guidance() {
     let fx = Fixture::new();
     fx.write_config(&format!(

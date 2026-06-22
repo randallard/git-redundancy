@@ -155,6 +155,14 @@ pub fn install_hook(
     run_with_stdin(alias, &cmd, body)
 }
 
+/// Remove a hook from `<root>/<name>.git/hooks/<hook>` (`rm -f`, idempotent).
+/// Used by `repoint` to drop a stale `post-receive` when a former primary home
+/// is re-roled as a backup, so it can't mirror in the wrong direction (ADR-0018).
+pub fn remove_hook(alias: &str, root: &Path, name: &str, hook: &str) -> Result<CmdOutcome> {
+    let path = format!("{}/{name}.git/hooks/{hook}", root.display());
+    run(alias, &format!("rm -f '{path}'"))
+}
+
 /// The shell to harden a backup home: fast-forward-only, no deletes (SI / ADR-0016,
 /// matching the companion home-fleet's tenx-harden-homes.sh). Pure (testable).
 fn harden_cmd(root: &Path, name: &str) -> String {

@@ -11,7 +11,7 @@ It is deliberately conservative: it **never auto-commits, never force-pushes, an
 touches a diverged branch**. It backs up what's safe and tells you loudly about the rest.
 
 > Status: early (`0.0.0`), but the core works and is well-tested. `gr status`, `gr push`, the
-> `create` / `clone` / `sync` lifecycle commands, and the `onboard` guided walk are
+> `create` / `clone` / `sync` lifecycle commands, the `onboard` guided walk, and `repoint` are
 > implemented; see [Status](#status).
 
 ## Why
@@ -241,9 +241,28 @@ $ gr onboard
   mid-create. `--dry-run` previews the whole walk without prompting or changing anything.
 
 Onboarding needs the home server reachable (it provisions on it). A fourth choice, **`r`
-(repoint)**, is offered for repos whose home is on the *backup* but not the primary; its
-mechanics are [ADR-0018](docs/adr/0018-repoint-backup-only-homes-into-current-topology.md)
-and not yet implemented.
+(repoint)**, is offered for repos whose home is on the *backup* but not the primary (also
+runnable directly as `gr repoint <name>`); see below.
+
+### `gr repoint <name>`
+
+Brings a **backup-only home** into the current primary→backup topology
+([ADR-0018](docs/adr/0018-repoint-backup-only-homes-into-current-topology.md)) — for repos set
+up before the fleet flipped, whose home lives on the *backup* but not the *primary*. It refuses
+to lose history and rewires your remotes **last**, so any failure leaves you safely on the
+working backup home:
+
+1. **Consistency gate** — every branch must be **ahead-or-equal** of the backup; `behind` /
+   `diverged` is refused and sent to `gr sync` first (never force, never auto-merge).
+2. **Provision** the primary home (+`post-receive`) and **seed** it from your verified-superset
+   copy.
+3. **Re-role** the existing backup home — harden it ff-only, install the `pre-receive` guard,
+   drop any stale `post-receive`.
+4. **Confirm** the backup fast-forwards from the new primary (the backup's ff-only guard is the
+   backstop).
+5. **Repoint** this repo's `data`/`data-lan` remotes at the primary — last.
+
+Idempotent and resumable; `--dry-run` shows the plan and the per-branch gate result.
 
 ## How it works
 
@@ -273,12 +292,13 @@ SSH transport — which is where the optional FIPS enforcement lives.
 ## Status
 
 Implemented and tested: `gr status` (home-aware, with a per-repo detail view and `--json`),
-`gr push`, the `create` / `clone` / `sync` lifecycle commands, and the `gr onboard` guided
-walk — all with transport failover and audit logging. `create` provisions the **full fleet
-topology** when a `[backup]` is set (ADR-0016): primary home + `post-receive` hook + hardened
-backup home, redundant from one command. `onboard` (ADR-0017) walks the un-redundant repos
-y/n/s/q with a config `ignore` list; the `r`/repoint path (ADR-0018) is designed but not yet
-built. Hermetic integration tests, property tests, and a Kani-verified
+`gr push`, the `create` / `clone` / `sync` lifecycle commands, the `gr onboard` guided walk,
+and `gr repoint` — all with transport failover and audit logging. `create` provisions the
+**full fleet topology** when a `[backup]` is set (ADR-0016): primary home + `post-receive` hook
++ hardened backup home, redundant from one command. `onboard` (ADR-0017) walks the un-redundant
+repos y/n/s/q with a config `ignore` list, and `repoint` (ADR-0018) brings a backup-only home
+into the current topology behind a never-lose-history consistency gate. Hermetic integration
+tests, property tests, and a Kani-verified
 safety invariant; CI runs the gates + Kani + a coverage gate + supply-chain checks
 (`cargo-deny`, `cargo-vet`, SBOM) on every push. Not yet: the *mandatory* (server-side) FIPS
 tier. A GUI is a possible later phase (Tauri, reusing the Rust core — `--json` is the seam).

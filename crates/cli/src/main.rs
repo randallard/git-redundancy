@@ -42,6 +42,8 @@ enum Command {
     Sync(SyncArgs),
     /// Walk un-redundant repos one at a time: onboard / ignore / skip / quit (ADR-0017).
     Onboard(OnboardArgs),
+    /// Bring a backup-only home into the current primary→backup topology (ADR-0018).
+    Repoint(RepointArgs),
 }
 
 #[derive(clap::Args)]
@@ -109,6 +111,15 @@ pub struct OnboardArgs {
 }
 
 #[derive(clap::Args)]
+pub struct RepointArgs {
+    /// Repo to repoint (by home or directory name).
+    pub name: String,
+    /// Preview the plan and the per-branch gate result; change nothing.
+    #[arg(long)]
+    pub dry_run: bool,
+}
+
+#[derive(clap::Args)]
 pub struct CloneArgs {
     /// Home name to clone (`<root>/<name>.git` on the server).
     pub name: String,
@@ -158,6 +169,7 @@ fn main() -> Result<()> {
         Some(Command::Clone(args)) => lifecycle::run_clone(&args),
         Some(Command::Sync(args)) => lifecycle::run_sync(&args),
         Some(Command::Onboard(args)) => lifecycle::run_onboard(&args),
+        Some(Command::Repoint(args)) => lifecycle::run_repoint(&args),
     }
 }
 

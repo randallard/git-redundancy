@@ -3,7 +3,7 @@
 //! loudly without half-acting; all audit their actions (ADR-0004 AU); none ever
 //! force-push, auto-commit, or auto-merge.
 
-use crate::{CloneArgs, CreateArgs, OnboardArgs, SyncArgs};
+use crate::{CloneArgs, CreateArgs, OnboardArgs, RepointArgs, SyncArgs};
 use anyhow::{Context, Result};
 use git_redundancy_core::presence::Lifecycle;
 use git_redundancy_core::{BranchSync, SyncAction};
@@ -316,7 +316,9 @@ pub fn run_onboard(args: &OnboardArgs) -> Result<()> {
             let plan = match (blocked, kind) {
                 (true, _) => format!("BLOCKED ({blocked_why}) — ignore or fix, then re-run"),
                 (false, Onboard::Create) => "would onboard → create -a (full topology)".into(),
-                (false, Onboard::Repoint) => "would repoint (ADR-0018)".into(),
+                (false, Onboard::Repoint) => {
+                    "would repoint → provision primary + re-role backup".into()
+                }
             };
             println!("  → {plan}\n");
             continue;
@@ -336,15 +338,14 @@ pub fn run_onboard(args: &OnboardArgs) -> Result<()> {
                     }
                 }
             }
-            Decision::Repoint => {
-                // ADR-0018 specifies the mechanics; not yet implemented. Leave the
-                // repo untouched and ask again next run (treated as a skip).
-                println!(
-                    "  repoint isn't implemented yet (ADR-0018) — left as-is; \
-                     choose ignore (n) if you want to stop the prompt."
-                );
-                tally.skipped += 1;
-            }
+            Decision::Repoint => match repoint_repo(&cfg, repo, name, &repos, &audit, false) {
+                Ok(o) if !o.failed => tally.onboarded += 1,
+                Ok(_) => tally.failed += 1, // gate/flip reported; remotes untouched
+                Err(e) => {
+                    eprintln!("  repointing `{name}` failed: {e:#}");
+                    tally.failed += 1;
+                }
+            },
             Decision::Ignore => {
                 Config::append_ignore(name)?;
                 println!(
@@ -480,6 +481,306 @@ fn short_host(url: &str) -> String {
         url.to_string()
     } else {
         host.to_string()
+    }
+}
+
+// ============================ gr repoint ====================================
+
+struct RepointOutcome {
+    failed: bool,
+}
+
+/// `gr repoint <name>` — bring a backup-only home into the current primary→backup
+/// topology (ADR-0018): the home exists on the `[backup]` but not the `[server]`
+/// (the original-7 sub-state, from before the fleet flipped). Provisions + seeds
+/// the primary, re-roles the existing backup home, confirms the mirror is
+/// fast-forward-consistent, then rewires this repo's remotes — last, so a failure
+/// leaves the client safely pointed at the working backup home.
+pub fn run_repoint(args: &RepointArgs) -> Result<()> {
+    let cfg = Config::load()?;
+    require_server(&cfg)?;
+    if !cfg.backup_enabled() {
+        anyhow::bail!(
+            "repoint needs a [backup] server (it re-roles the existing backup home) — none configured"
+        );
+    }
+
+    let repos = discover(&cfg);
+    let survey = git_redundancy_io::survey(&cfg);
+    if !survey.reachable {
+        anyhow::bail!("home server unreachable — repoint provisions on it; retry when it's up");
+    }
+    if !survey.backup.as_ref().is_some_and(|b| b.reachable) {
+        anyhow::bail!(
+            "backup server unreachable — repoint re-roles the backup home; retry when it's up"
+        );
+    }
+
+    // Resolve the repo and confirm it's the backup-only sub-state.
+    let Some(p) = survey
+        .presences
+        .iter()
+        .find(|p| p.home_name == args.name || p.local_dir.as_deref() == Some(args.name.as_str()))
+    else {
+        anyhow::bail!(
+            "no repo named `{}` — run `gr status` to list them",
+            args.name
+        );
+    };
+    if p.lifecycle != Lifecycle::LocalOnly {
+        anyhow::bail!(
+            "`{}` is `{}`, not a backup-only home — repoint only applies when the primary home is missing",
+            p.home_name,
+            p.lifecycle.label()
+        );
+    }
+    let on_backup = survey
+        .backup
+        .as_ref()
+        .is_some_and(|b| b.homes.iter().any(|h| h == &p.home_name));
+    if !on_backup {
+        anyhow::bail!(
+            "`{}` has no home on the backup — nothing to repoint; `gr create` makes a fresh redundant home",
+            p.home_name
+        );
+    }
+    let Some(dir) = &p.local_dir else {
+        anyhow::bail!(
+            "`{}` has no local working copy here — nothing to repoint from",
+            p.home_name
+        );
+    };
+    let repo = repos
+        .iter()
+        .find(|r| repo_name(r) == *dir)
+        .cloned()
+        .context("resolving the repo path")?;
+
+    let audit = Audit::from_config(&cfg);
+    let outcome = repoint_repo(&cfg, &repo, &p.home_name, &repos, &audit, args.dry_run)?;
+    if outcome.failed {
+        std::process::exit(1);
+    }
+    Ok(())
+}
+
+/// The ADR-0018 repoint operation for one repo: the consistency gate followed by
+/// the ordered, rewire-last flip. Shared by `gr repoint` and `gr onboard`'s `r`.
+/// Returns `failed = true` (without erroring) when the gate or the mirror check
+/// blocks — the repo and its remotes are left untouched.
+fn repoint_repo(
+    cfg: &Config,
+    repo: &Path,
+    name: &str,
+    repos: &[PathBuf],
+    audit: &Audit,
+    dry_run: bool,
+) -> Result<RepointOutcome> {
+    // Pre-flight: a branch with commits (the seed source must exist).
+    let branch = git::current_branch(repo)?
+        .filter(|b| !b.is_empty())
+        .context("not on a branch (detached HEAD) — checkout a branch before repointing")?;
+    if !git::has_commits(repo)? {
+        anyhow::bail!("`{name}` has no commits yet — nothing to repoint");
+    }
+
+    // --- Consistency gate: the local copy must be ahead-or-equal of the backup,
+    // per branch. The client's transport remotes still point at the backup here,
+    // so we classify against them (the same machinery `sync` uses).
+    let order = transport_order(cfg);
+    let have: BTreeSet<String> = git::remotes(repo)?.into_iter().collect();
+    let candidates: Vec<String> = order
+        .iter()
+        .filter(|r| have.contains(*r))
+        .cloned()
+        .collect();
+    if candidates.is_empty() {
+        anyhow::bail!("`{name}` has no configured backup remote to compare against");
+    }
+    let live = first_reachable(repo, &candidates)?
+        .context("backup unreachable for the consistency check")?;
+
+    let branches = git::local_branches(repo)?;
+    let mut blocked: Vec<(String, String)> = Vec::new();
+    for b in &branches {
+        match git::branch_sync(repo, b, &live)? {
+            // ahead / equal / new-local-branch → safe to make the primary authoritative.
+            BranchSync::UpToDate | BranchSync::Ahead(_) | BranchSync::NoRemoteBranch => {}
+            BranchSync::Behind(n) => blocked.push((
+                b.clone(),
+                format!("behind {n} — the backup has commits you don't; `gr sync` first"),
+            )),
+            BranchSync::Diverged { conflict, .. } => blocked.push((
+                b.clone(),
+                if conflict {
+                    "diverged + CONFLICT".into()
+                } else {
+                    "diverged".into()
+                },
+            )),
+        }
+    }
+    if !blocked.is_empty() {
+        eprintln!(
+            "repoint blocked for `{name}` — the local copy must be ahead-or-equal of the backup on every branch:"
+        );
+        for (b, why) in &blocked {
+            eprintln!("  {b}: {why}");
+        }
+        eprintln!("Reconcile with `gr sync` (absorb the backup's history), then re-run.");
+        return Ok(RepointOutcome { failed: true });
+    }
+
+    // Server (new primary) + backup coordinates.
+    let s_alias = server::pick_alias(cfg, repos)?;
+    let s_root = cfg.server.root.clone();
+    let bk_alias = server::pick_backup_alias(cfg)?;
+    let bk_root = cfg.backup.root.clone();
+    let primary_url = server::home_url(&s_alias, &s_root, name);
+    let backup_url = server::home_url(&bk_alias, &bk_root, name);
+
+    if dry_run {
+        println!(
+            "[dry-run] repoint `{name}` — gate passed, {} branch(es) ahead-or-equal:",
+            branches.len()
+        );
+        println!(
+            "  1. provision primary {}/{name}.git on {s_alias} (+post-receive)",
+            s_root.display()
+        );
+        println!(
+            "  2. seed it from this copy ({} branch(es))",
+            branches.len()
+        );
+        println!(
+            "  3. re-role backup {}/{name}.git on {bk_alias} (harden + pre-receive, drop stale post-receive)",
+            bk_root.display()
+        );
+        println!("  4. confirm the backup fast-forwards from the primary");
+        println!("  5. repoint this repo's remotes → {s_alias} (last)");
+        return Ok(RepointOutcome { failed: false });
+    }
+
+    // --- Step 1: provision the primary on the [server] (idempotent — resume if present).
+    if server::home_exists(&s_alias, &s_root, name)? {
+        println!("primary home already present on {s_alias} — resuming");
+    } else {
+        println!(
+            "creating primary home {}/{name}.git via {s_alias} …",
+            s_root.display()
+        );
+        let init = server::init_bare(&s_alias, &s_root, name)?;
+        if !init.success {
+            anyhow::bail!(
+                "could not create primary home: {}",
+                first_line(&init.stderr)
+            );
+        }
+        let _ = server::set_head(&s_alias, &s_root, name, &branch)?;
+    }
+    let hook = server::install_hook(
+        &s_alias,
+        &s_root,
+        name,
+        "post-receive",
+        server::POST_RECEIVE_HOOK,
+    )?;
+    if !hook.success {
+        anyhow::bail!(
+            "provisioned the primary home but failed to install its post-receive hook: {}",
+            first_line(&hook.stderr)
+        );
+    }
+    println!("  installed post-receive hook on {s_alias}");
+
+    // --- Step 2: seed the primary from the verified-superset local copy. Push by
+    // URL so the client's remotes stay on the backup until the very end.
+    let mut seed_failed = false;
+    for b in &branches {
+        let out = git::push(repo, &primary_url, b, false, true)?;
+        if out.success {
+            println!("  seeded {b} → {s_alias}");
+        } else {
+            eprintln!("  seed {b} failed: {}", first_line(&out.stderr));
+            seed_failed = true;
+        }
+    }
+    if seed_failed {
+        eprintln!(
+            "repoint aborted before re-roling the backup — your remotes still point at the backup (nothing lost)."
+        );
+        return Ok(RepointOutcome { failed: true });
+    }
+
+    // --- Step 3: re-role the existing backup home — harden, install the ff-only
+    // pre-receive guard, and drop any stale post-receive from its primary days.
+    let hard = server::harden_home(&bk_alias, &bk_root, name)?;
+    if !hard.success {
+        anyhow::bail!(
+            "could not harden the backup home on {bk_alias}: {}",
+            first_line(&hard.stderr)
+        );
+    }
+    let _ = server::remove_hook(&bk_alias, &bk_root, name, "post-receive")?;
+    let pre = server::install_hook(
+        &bk_alias,
+        &bk_root,
+        name,
+        "pre-receive",
+        server::PRE_RECEIVE_HOOK,
+    )?;
+    if !pre.success {
+        anyhow::bail!(
+            "backup home hardened but its pre-receive guard failed to install on {bk_alias}: {}",
+            first_line(&pre.stderr)
+        );
+    }
+    println!("  backup home re-roled + hardened on {bk_alias}");
+
+    // --- Step 4: confirm the backup is fast-forward-consistent with the new
+    // primary — every backup head must be an ancestor of the seeded local ref.
+    // The gate already guarantees this; re-checking guards against a TOCTOU change.
+    let mut diverged: Vec<String> = Vec::new();
+    for b in &branches {
+        if let Some(backup_sha) = git::ls_remote_sha(&backup_url, b)? {
+            if !git::is_ancestor(repo, &backup_sha, b)? {
+                diverged.push(b.clone());
+            }
+        }
+    }
+    if !diverged.is_empty() {
+        eprintln!(
+            "repoint stopped: the backup holds divergent history on: {}",
+            diverged.join(", ")
+        );
+        eprintln!(
+            "Not rewiring your remotes — they still point at the backup. Reconcile, then retry."
+        );
+        return Ok(RepointOutcome { failed: true });
+    }
+    println!("  backup confirmed fast-forward-consistent with the primary");
+
+    // --- Step 5: repoint this repo's remotes at the primary — the literal repoint,
+    // done last so every prior failure left the client on the working backup home.
+    for (remote, url) in server::remote_wiring(cfg, repos, &s_root, name, &s_alias) {
+        if git::remote_url(repo, &remote)?.is_some() {
+            git::set_remote_url(repo, &remote, &url)?;
+        } else {
+            git::add_remote(repo, &remote, &url)?;
+        }
+        println!("  remote {remote} → {url}");
+    }
+    let _ = audit.record(name, "-", &s_alias, "repointed", "");
+    println!("repointed `{name}` → primary {s_alias}, backup {bk_alias} — redundant");
+    Ok(RepointOutcome { failed: false })
+}
+
+/// Transport remotes in preference order (`transport.order`, else `default_remotes`).
+fn transport_order(cfg: &Config) -> Vec<String> {
+    if cfg.transport.order.is_empty() {
+        cfg.default_remotes.clone()
+    } else {
+        cfg.transport.order.clone()
     }
 }
 

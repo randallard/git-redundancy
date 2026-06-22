@@ -237,6 +237,40 @@ pub fn ls_remote_heads(url: &str) -> Result<Vec<String>> {
         .collect())
 }
 
+/// SHA of `refs/heads/<branch>` on a remote via `git ls-remote`, or `None` when
+/// the remote has no such branch. Used to confirm the backup fast-forwards from
+/// the new primary during `repoint` (ADR-0018).
+pub fn ls_remote_sha(url: &str, branch: &str) -> Result<Option<String>> {
+    let refname = format!("refs/heads/{branch}");
+    let out = Command::new("git")
+        .args(["ls-remote", url, &refname])
+        .output()
+        .with_context(|| format!("git ls-remote {url} {refname}"))?;
+    if !out.status.success() {
+        anyhow::bail!(
+            "ls-remote {url}: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        );
+    }
+    Ok(String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .next()
+        .and_then(|l| l.split('\t').next())
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty()))
+}
+
+/// Is `ancestor` an ancestor of (or equal to) `descendant`? `git merge-base
+/// --is-ancestor` over local objects (no network). Used to verify the backup is
+/// fast-forward-consistent with the new primary before rewiring (ADR-0018).
+pub fn is_ancestor(repo: &Path, ancestor: &str, descendant: &str) -> Result<bool> {
+    Ok(
+        git(repo, &["merge-base", "--is-ancestor", ancestor, descendant])?
+            .status
+            .success(),
+    )
+}
+
 /// Fast-forward the **current** branch to `<remote>/<branch>` via
 /// `git merge --ff-only` — never a merge commit, never a non-ff. Caller must
 /// ensure `branch` is checked out and the tree is clean.

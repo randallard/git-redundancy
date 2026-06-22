@@ -257,9 +257,17 @@ Identity is the **home name** (derived from the `data` remote URL, so `USCourts_
   `create -a` (full redundant topology), **ignore (n)** → append to the config `ignore` list,
   **skip (s)**, **quit (q)**. Reuses the `status` survey for discovery; each y/n is committed as
   it happens (resumable); detached-HEAD / commitless repos are flagged, not errored; `--dry-run`
-  previews. `r`/repoint for backup-only homes is offered but deferred to
-  [ADR-0018](adr/0018-repoint-backup-only-homes-into-current-topology.md) (not yet built).
-  Ignored repos stay visible in `gr status` as `ignored` (suppressing the `+N⚠` nag).
+  previews. `r`/repoint for backup-only homes calls `gr repoint` (below). Ignored repos stay
+  visible in `gr status` as `ignored` (suppressing the `+N⚠` nag).
+- **`gr repoint <name>`** ([ADR-0018](adr/0018-repoint-backup-only-homes-into-current-topology.md))
+  — bring a **backup-only home** (home on `[backup]`, absent on `[server]` — the original-7
+  sub-state from before the fleet flipped) into the current topology. A **consistency gate**
+  (each branch must be ahead-or-equal of the backup; behind/diverged → refuse, `gr sync` first)
+  then a **rewire-last** flip: provision + seed the primary, re-role the existing backup home
+  (harden + `pre-receive`, drop the stale `post-receive`), confirm the backup fast-forwards from
+  the primary, then repoint the client's remotes — last, so any failure leaves the client on the
+  working backup home. Idempotent/resumable; audited (`repointed`); `--dry-run` previews. Also
+  the walk's `r`. *(The backup's ff-only guard is the server-side backstop to the gate.)*
 - Reads **degrade** when tenx is unreachable (home cells `?`, exit 0); `--offline` skips the
   network. Lifecycle commands require the server and fail loudly (ADR-0012 §5).
 

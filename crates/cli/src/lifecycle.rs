@@ -69,6 +69,53 @@ pub fn run_create(args: &CreateArgs) -> Result<()> {
     // Match the home's default branch to what we push (the empty-looking-bare gotcha).
     let _ = server::set_head(&alias, &root, &name, &branch)?;
 
+    // ADR-0016: provision the full fleet topology so onboarding yields *redundancy*,
+    // not just a primary home. Install the primary's replication hook and create +
+    // harden the backup home — both before the push, so the push mirrors immediately.
+    // gr provisions; the primary→backup mirror itself stays the controller's job.
+    if cfg.backup_enabled() {
+        let hook =
+            server::install_hook(&alias, &root, &name, "post-receive", server::POST_RECEIVE_HOOK)?;
+        if !hook.success {
+            anyhow::bail!(
+                "created the primary home but failed to install its post-receive hook: {}",
+                first_line(&hook.stderr)
+            );
+        }
+        println!("  installed post-receive hook on {alias}");
+
+        let bk_alias = server::pick_backup_alias(&cfg)?;
+        let bk_root = cfg.backup.root.clone();
+        if !server::home_exists(&bk_alias, &bk_root, &name)? {
+            let bk = server::init_bare(&bk_alias, &bk_root, &name)?;
+            if !bk.success {
+                anyhow::bail!(
+                    "created the primary home but failed to create the backup home on {bk_alias}: {}",
+                    first_line(&bk.stderr)
+                );
+            }
+            let _ = server::set_head(&bk_alias, &bk_root, &name, &branch)?;
+        }
+        let hard = server::harden_home(&bk_alias, &bk_root, &name)?;
+        if !hard.success {
+            anyhow::bail!(
+                "backup home exists but could not be hardened on {bk_alias}: {}",
+                first_line(&hard.stderr)
+            );
+        }
+        let pre =
+            server::install_hook(&bk_alias, &bk_root, &name, "pre-receive", server::PRE_RECEIVE_HOOK)?;
+        if !pre.success {
+            anyhow::bail!(
+                "backup home exists but its pre-receive guard failed to install on {bk_alias}: {}",
+                first_line(&pre.stderr)
+            );
+        }
+        println!("  backup home ready + hardened on {bk_alias}");
+    } else {
+        println!("  ⚠ no [backup] configured — this repo will live on the primary only, NOT redundant");
+    }
+
     // Wire data / data-lan per ADR-0009, replacing any stale URL.
     for (remote, url) in server::remote_wiring(&cfg, &repos, &root, &name, &alias) {
         if git::remote_url(&cwd, &remote)?.is_some() {
@@ -101,7 +148,15 @@ pub fn run_create(args: &CreateArgs) -> Result<()> {
     if failed {
         std::process::exit(1);
     }
-    println!("created `{name}` ({} branch(es) pushed)", branches.len());
+    let topo = if cfg.backup_enabled() {
+        " — redundant (primary + backup)"
+    } else {
+        " — primary only (no [backup])"
+    };
+    println!(
+        "created `{name}` ({} branch(es) pushed){topo}",
+        branches.len()
+    );
     Ok(())
 }
 

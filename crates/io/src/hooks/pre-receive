@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+#
+# pre-receive — installed into each backup home by `gr create` (ADR-0016).
+#
+# VENDORED from the companion home-fleet project's scripts/replication/tenx-pre-receive
+# (the source of truth). Keep in sync; provenance: home-fleet @ tenx-pre-receive.
+#
+# Backup integrity (SI): the backup copy is append-only / fast-forward-only. Reject any
+# deletion or non-fast-forward update, so a compromised or buggy controller cannot
+# rewrite or erase backup history. Redundant with receive.denyNonFastForwards/denyDeletes,
+# and deliberately so (defense in depth).
+#
+# Generic — no repo names; safe to publish.
+set -euo pipefail
+
+zero="0000000000000000000000000000000000000000"
+while read -r old new ref; do
+  if [ "$new" = "$zero" ]; then
+    echo "reject: deletions are not allowed on the backup ($ref)" >&2; exit 1
+  fi
+  if [ "$old" != "$zero" ] && ! git merge-base --is-ancestor "$old" "$new"; then
+    echo "reject: non-fast-forward update to $ref (backup is ff-only)" >&2; exit 1
+  fi
+done
+exit 0

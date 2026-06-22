@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+#
+# post-receive — installed into each primary home by `gr create` (ADR-0016).
+#
+# VENDORED from the companion home-fleet project's scripts/replication/acer-post-receive
+# (the source of truth). Keep in sync; provenance: home-fleet @ acer-post-receive.
+#
+# Fires after every accepted push to this home and mirrors it to the backup, so
+# "if it's on the primary, it's on the backup" holds in near-real-time. It pushes ALL
+# heads+tags (not just the changed ref) so it is self-healing. The client's push has
+# already succeeded by now, so a backup failure here never blocks the client — it is
+# logged and the scheduled sweep retries.
+#
+# Generic — no repo names; safe to publish.
+set -euo pipefail
+
+home="$(git rev-parse --absolute-git-dir)"
+REPLDIR="${REPLDIR:-/data/git/.replication}"
+
+# Don't fail the receiving side if the backup is momentarily unreachable; sweep catches up.
+"$REPLDIR/acer-mirror-one.sh" "$home" || true

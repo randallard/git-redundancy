@@ -231,12 +231,13 @@ repo becomes *a name with up to two presences* — **local** (a working copy und
 Identity is the **home name** (derived from the `data` remote URL, so `USCourts_setup` ↔
 `omarchy-setup` just works); `data`/`data-lan` dedupe to one home (ADR-0012).
 
-- **`gr create [name]`** — init the bare home on tenx, set its `HEAD`, wire `data`/`data-lan`,
-  push. Refuses if a home already exists. Audited. **Decided next ([ADR-0016](adr/0016-create-provisions-full-fleet-topology.md), not yet implemented):**
-  with a `[backup]` configured, `create` also installs the primary's `post-receive` hook and
-  creates + hardens the **backup** home, so a new repo is **redundant** (on both boxes) from one
-  command — not merely present on the primary. Surfaced by dogfooding the companion home-fleet
-  onboarding, where `create` left repos with `Bkp miss` until the backup home was hand-made.
+- **`gr create [name]`** — init the bare home on the primary, set its `HEAD`, wire
+  `data`/`data-lan`, push. Refuses if a home already exists. Audited. **With a `[backup]`
+  configured ([ADR-0016](adr/0016-create-provisions-full-fleet-topology.md)):** also installs the
+  primary's `post-receive` hook and creates + hardens the **backup** home, so a new repo is
+  **redundant** (both boxes) from one command — mirrored on the create push. Surfaced by
+  dogfooding the companion home-fleet onboarding (`create` had left repos at `Bkp miss`);
+  verified onboarding `branching-video` (both branches matched primary↔backup).
 - **`gr clone <name> [dir]`** — clone a home-only repo; target **must land inside a
   configured root** (default `roots[0]/<name>`) so it's auto-discovered, else `gr` lists the
   roots + how to add one and stops. Drops the clone-minted `origin` (kept cloud-only). Audited.

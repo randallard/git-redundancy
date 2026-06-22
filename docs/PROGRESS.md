@@ -224,9 +224,10 @@ repo becomes *a name with up to two presences* — **local** (a working copy und
 
 | State | Meaning | Verb |
 |---|---|---|
-| `local-only` | working copy here, no bare home yet | `gr create` |
+| `local-only` | working copy here, no bare home yet | `gr create` (or `gr onboard`) |
 | `home-only`  | bare home on tenx, never cloned here | `gr clone` |
 | `linked`     | both exist → look at per-branch drift | `gr sync` |
+| `ignored`    | deliberately left unprotected (ADR-0017) | — (in the `ignore` list) |
 
 Identity is the **home name** (derived from the `data` remote URL, so `USCourts_setup` ↔
 `omarchy-setup` just works); `data`/`data-lan` dedupe to one home (ADR-0012).
@@ -251,6 +252,14 @@ Identity is the **home name** (derived from the `data` remote URL, so `USCourts_
   local-only/home-only — so a clean current branch can't hide un-backed-up work).
   **`gr status <repo>`** (positional) is the one-repo, all-branches **detail view** — works
   for local *or* home-only repos and previews what `gr sync` would do per branch.
+- **`gr onboard`** ([ADR-0017](adr/0017-onboard-guided-walk-and-ignore-list.md)) — a guided
+  walk down the `local-only`, non-ignored repos, one decision each: **onboard (y)** →
+  `create -a` (full redundant topology), **ignore (n)** → append to the config `ignore` list,
+  **skip (s)**, **quit (q)**. Reuses the `status` survey for discovery; each y/n is committed as
+  it happens (resumable); detached-HEAD / commitless repos are flagged, not errored; `--dry-run`
+  previews. `r`/repoint for backup-only homes is offered but deferred to
+  [ADR-0018](adr/0018-repoint-backup-only-homes-into-current-topology.md) (not yet built).
+  Ignored repos stay visible in `gr status` as `ignored` (suppressing the `+N⚠` nag).
 - Reads **degrade** when tenx is unreachable (home cells `?`, exit 0); `--offline` skips the
   network. Lifecycle commands require the server and fail loudly (ADR-0012 §5).
 
@@ -279,6 +288,10 @@ repos = []
 
 # Optional: paths/names to exclude even if found under a root.
 exclude = []
+
+# Optional: repos deliberately left unprotected (ADR-0017). `gr onboard`'s "ignore"
+# appends here; they still show in `gr status` as `ignored`, never silently hidden.
+ignore = []
 
 # optional: named remote groups for `push` and column ordering
 default_remotes = ["data-lan", "data"]

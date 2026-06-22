@@ -3,11 +3,12 @@
 //! loudly without half-acting; all audit their actions (ADR-0004 AU); none ever
 //! force-push, auto-commit, or auto-merge.
 
-use crate::{CloneArgs, CreateArgs, SyncArgs};
+use crate::{CloneArgs, CreateArgs, OnboardArgs, SyncArgs};
 use anyhow::{Context, Result};
+use git_redundancy_core::presence::Lifecycle;
 use git_redundancy_core::{BranchSync, SyncAction};
 use git_redundancy_io::{config::Config, discovery::discover, git, server, Audit};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
@@ -41,18 +42,44 @@ pub fn run_create(args: &CreateArgs) -> Result<()> {
     require_server(&cfg)?;
 
     let cwd = std::env::current_dir().context("getting current directory")?;
-    git::current_branch(&cwd)?
-        .as_deref()
-        .filter(|b| !b.is_empty())
-        .context("not on a branch (detached HEAD) — checkout a branch before `create`")?;
-    let branch = git::current_branch(&cwd)?.unwrap();
     let name = args.name.clone().unwrap_or_else(|| repo_name(&cwd));
 
     let repos = discover(&cfg);
-    let root = cfg.server.root.clone();
     let alias = server::pick_alias(&cfg, &repos)?;
+    let audit = Audit::from_config(&cfg);
 
-    if server::home_exists(&alias, &root, &name)? {
+    let outcome = create_home(&cfg, &cwd, &name, args.all_branches, &repos, &alias, &audit)?;
+    if outcome.failed {
+        std::process::exit(1);
+    }
+    Ok(())
+}
+
+/// Result of provisioning a home: whether any branch push failed. The caller
+/// decides whether that's fatal — `create` exits, `onboard` reports and walks on.
+struct CreateOutcome {
+    failed: bool,
+}
+
+/// The ADR-0013 + ADR-0016 core of `create`: provision a brand-new home for
+/// `repo` (named `name`), install the replication topology, wire the remotes,
+/// and push. Shared by `gr create` (the cwd) and `gr onboard` (any repo path).
+/// Refuses if a primary home of that name already exists.
+fn create_home(
+    cfg: &Config,
+    repo: &Path,
+    name: &str,
+    all_branches: bool,
+    repos: &[PathBuf],
+    alias: &str,
+    audit: &Audit,
+) -> Result<CreateOutcome> {
+    let branch = git::current_branch(repo)?
+        .filter(|b| !b.is_empty())
+        .context("not on a branch (detached HEAD) — checkout a branch before onboarding")?;
+    let root = cfg.server.root.clone();
+
+    if server::home_exists(alias, &root, name)? {
         anyhow::bail!(
             "a home named `{name}` already exists on the server — use `gr sync` to back it up"
         );
@@ -62,20 +89,25 @@ pub fn run_create(args: &CreateArgs) -> Result<()> {
         "creating bare home {}/{name}.git via {alias} …",
         root.display()
     );
-    let init = server::init_bare(&alias, &root, &name)?;
+    let init = server::init_bare(alias, &root, name)?;
     if !init.success {
         anyhow::bail!("could not create bare repo: {}", first_line(&init.stderr));
     }
     // Match the home's default branch to what we push (the empty-looking-bare gotcha).
-    let _ = server::set_head(&alias, &root, &name, &branch)?;
+    let _ = server::set_head(alias, &root, name, &branch)?;
 
     // ADR-0016: provision the full fleet topology so onboarding yields *redundancy*,
     // not just a primary home. Install the primary's replication hook and create +
     // harden the backup home — both before the push, so the push mirrors immediately.
     // gr provisions; the primary→backup mirror itself stays the controller's job.
     if cfg.backup_enabled() {
-        let hook =
-            server::install_hook(&alias, &root, &name, "post-receive", server::POST_RECEIVE_HOOK)?;
+        let hook = server::install_hook(
+            alias,
+            &root,
+            name,
+            "post-receive",
+            server::POST_RECEIVE_HOOK,
+        )?;
         if !hook.success {
             anyhow::bail!(
                 "created the primary home but failed to install its post-receive hook: {}",
@@ -84,27 +116,32 @@ pub fn run_create(args: &CreateArgs) -> Result<()> {
         }
         println!("  installed post-receive hook on {alias}");
 
-        let bk_alias = server::pick_backup_alias(&cfg)?;
+        let bk_alias = server::pick_backup_alias(cfg)?;
         let bk_root = cfg.backup.root.clone();
-        if !server::home_exists(&bk_alias, &bk_root, &name)? {
-            let bk = server::init_bare(&bk_alias, &bk_root, &name)?;
+        if !server::home_exists(&bk_alias, &bk_root, name)? {
+            let bk = server::init_bare(&bk_alias, &bk_root, name)?;
             if !bk.success {
                 anyhow::bail!(
                     "created the primary home but failed to create the backup home on {bk_alias}: {}",
                     first_line(&bk.stderr)
                 );
             }
-            let _ = server::set_head(&bk_alias, &bk_root, &name, &branch)?;
+            let _ = server::set_head(&bk_alias, &bk_root, name, &branch)?;
         }
-        let hard = server::harden_home(&bk_alias, &bk_root, &name)?;
+        let hard = server::harden_home(&bk_alias, &bk_root, name)?;
         if !hard.success {
             anyhow::bail!(
                 "backup home exists but could not be hardened on {bk_alias}: {}",
                 first_line(&hard.stderr)
             );
         }
-        let pre =
-            server::install_hook(&bk_alias, &bk_root, &name, "pre-receive", server::PRE_RECEIVE_HOOK)?;
+        let pre = server::install_hook(
+            &bk_alias,
+            &bk_root,
+            name,
+            "pre-receive",
+            server::PRE_RECEIVE_HOOK,
+        )?;
         if !pre.success {
             anyhow::bail!(
                 "backup home exists but its pre-receive guard failed to install on {bk_alias}: {}",
@@ -113,40 +150,38 @@ pub fn run_create(args: &CreateArgs) -> Result<()> {
         }
         println!("  backup home ready + hardened on {bk_alias}");
     } else {
-        println!("  ⚠ no [backup] configured — this repo will live on the primary only, NOT redundant");
+        println!(
+            "  ⚠ no [backup] configured — this repo will live on the primary only, NOT redundant"
+        );
     }
 
     // Wire data / data-lan per ADR-0009, replacing any stale URL.
-    for (remote, url) in server::remote_wiring(&cfg, &repos, &root, &name, &alias) {
-        if git::remote_url(&cwd, &remote)?.is_some() {
-            git::set_remote_url(&cwd, &remote, &url)?;
+    for (remote, url) in server::remote_wiring(cfg, repos, &root, name, alias) {
+        if git::remote_url(repo, &remote)?.is_some() {
+            git::set_remote_url(repo, &remote, &url)?;
         } else {
-            git::add_remote(&cwd, &remote, &url)?;
+            git::add_remote(repo, &remote, &url)?;
         }
         println!("  remote {remote} → {url}");
     }
 
     // Push the branch (or all with -a) over the live alias's remote.
-    let audit = Audit::from_config(&cfg);
-    let push_remote = primary_remote(&cfg, &cwd)?;
-    let branches = if args.all_branches {
-        git::local_branches(&cwd)?
+    let push_remote = primary_remote(cfg, repo)?;
+    let branches = if all_branches {
+        git::local_branches(repo)?
     } else {
         vec![branch.clone()]
     };
     let mut failed = false;
     for b in &branches {
-        let out = git::push(&cwd, &push_remote, b, false, false)?;
+        let out = git::push(repo, &push_remote, b, false, false)?;
         if out.success {
             println!("  pushed {b} → {push_remote}");
-            let _ = audit.record(&name, b, &push_remote, "created", "");
+            let _ = audit.record(name, b, &push_remote, "created", "");
         } else {
             eprintln!("  push {b} failed: {}", first_line(&out.stderr));
             failed = true;
         }
-    }
-    if failed {
-        std::process::exit(1);
     }
     let topo = if cfg.backup_enabled() {
         " — redundant (primary + backup)"
@@ -157,7 +192,7 @@ pub fn run_create(args: &CreateArgs) -> Result<()> {
         "created `{name}` ({} branch(es) pushed){topo}",
         branches.len()
     );
-    Ok(())
+    Ok(CreateOutcome { failed })
 }
 
 /// The first transport remote actually present on the repo (the one to push to).
@@ -172,6 +207,280 @@ fn primary_remote(cfg: &Config, repo: &Path) -> Result<String> {
         .into_iter()
         .find(|r| have.contains(r))
         .context("no transport remote present after wiring")
+}
+
+// ============================ gr onboard ====================================
+
+/// What a candidate needs to become redundant.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Onboard {
+    /// Local-only, no home anywhere → `create` provisions the full topology.
+    Create,
+    /// Local-only on the primary but a home already exists on the *backup* (the
+    /// original-7 sub-state) → needs `repoint` (ADR-0018), not a fresh create.
+    Repoint,
+}
+
+#[derive(Default)]
+struct OnboardTally {
+    onboarded: u32,
+    ignored: u32,
+    skipped: u32,
+    failed: u32,
+}
+
+/// `gr onboard` — walk the un-redundant, non-ignored repos one at a time and let
+/// the operator decide each: onboard (y) / ignore (n) / skip (s) / quit (q), plus
+/// repoint (r) for backup-only homes (ADR-0017). Every y/n is committed as it
+/// happens, so quitting keeps all decisions and the walk is resumable.
+pub fn run_onboard(args: &OnboardArgs) -> Result<()> {
+    let cfg = Config::load()?;
+    require_server(&cfg)?;
+    if cfg.is_empty() {
+        println!(
+            "No repos configured. Add roots/repos to {}.",
+            Config::config_path().display()
+        );
+        return Ok(());
+    }
+
+    let repos = discover(&cfg);
+    let survey = git_redundancy_io::survey(&cfg);
+    if !survey.reachable {
+        anyhow::bail!(
+            "home server unreachable — onboarding provisions on it, so it must be up. \
+             Use `gr status --offline` to inspect locally, then retry."
+        );
+    }
+    let path_by_dir: BTreeMap<String, PathBuf> =
+        repos.iter().map(|p| (repo_name(p), p.clone())).collect();
+
+    // Homes that exist on the backup — used to spot the repoint sub-state.
+    let backup_homes: BTreeSet<&str> = survey
+        .backup
+        .as_ref()
+        .filter(|b| b.reachable)
+        .map(|b| b.homes.iter().map(String::as_str).collect())
+        .unwrap_or_default();
+
+    // Candidates: local working copy present, no primary home yet, not ignored.
+    // (linked = done; home-only = `clone`'s job; ignored = deliberately skipped.)
+    let mut candidates: Vec<(String, PathBuf, Onboard)> = Vec::new();
+    for p in &survey.presences {
+        if p.lifecycle != Lifecycle::LocalOnly {
+            continue;
+        }
+        let Some(dir) = &p.local_dir else { continue };
+        if cfg.is_ignored(&p.home_name) || cfg.is_ignored(dir) {
+            continue;
+        }
+        let Some(repo) = path_by_dir.get(dir) else {
+            continue;
+        };
+        let kind = if backup_homes.contains(p.home_name.as_str()) {
+            Onboard::Repoint
+        } else {
+            Onboard::Create
+        };
+        candidates.push((p.home_name.clone(), repo.clone(), kind));
+    }
+
+    if candidates.is_empty() {
+        println!("Nothing to onboard — every repo is redundant or ignored. ✓");
+        return Ok(());
+    }
+
+    let alias = server::pick_alias(&cfg, &repos)?;
+    let audit = Audit::from_config(&cfg);
+    let total = candidates.len();
+    if args.dry_run {
+        println!("[dry-run] {total} candidate(s); showing the plan, changing nothing.\n");
+    }
+
+    let mut tally = OnboardTally::default();
+    for (i, (name, repo, kind)) in candidates.iter().enumerate() {
+        print_candidate(i + 1, total, name, repo)?;
+
+        // Pre-flight: a detached HEAD or a commitless repo can't be onboarded
+        // as-is — flag it instead of erroring partway through `create`.
+        let on_branch = git::current_branch(repo)?.is_some_and(|b| !b.is_empty());
+        let has_commits = git::has_commits(repo)?;
+        let blocked = !on_branch || !has_commits;
+        let blocked_why = if !has_commits {
+            "no commits yet"
+        } else {
+            "detached HEAD"
+        };
+
+        if args.dry_run {
+            let plan = match (blocked, kind) {
+                (true, _) => format!("BLOCKED ({blocked_why}) — ignore or fix, then re-run"),
+                (false, Onboard::Create) => "would onboard → create -a (full topology)".into(),
+                (false, Onboard::Repoint) => "would repoint (ADR-0018)".into(),
+            };
+            println!("  → {plan}\n");
+            continue;
+        }
+
+        if blocked {
+            println!("  ⚠ can't onboard as-is — {blocked_why}.");
+        }
+        match prompt_decision(blocked, *kind)? {
+            Decision::Onboard => {
+                match create_home(&cfg, repo, name, true, &repos, &alias, &audit) {
+                    Ok(o) if !o.failed => tally.onboarded += 1,
+                    Ok(_) => tally.failed += 1, // partial push; create_home already reported
+                    Err(e) => {
+                        eprintln!("  onboarding `{name}` failed: {e:#}");
+                        tally.failed += 1;
+                    }
+                }
+            }
+            Decision::Repoint => {
+                // ADR-0018 specifies the mechanics; not yet implemented. Leave the
+                // repo untouched and ask again next run (treated as a skip).
+                println!(
+                    "  repoint isn't implemented yet (ADR-0018) — left as-is; \
+                     choose ignore (n) if you want to stop the prompt."
+                );
+                tally.skipped += 1;
+            }
+            Decision::Ignore => {
+                Config::append_ignore(name)?;
+                println!(
+                    "  ignored — recorded in {}",
+                    Config::config_path().display()
+                );
+                tally.ignored += 1;
+            }
+            Decision::Skip => {
+                println!("  skipped — will ask again next run.");
+                tally.skipped += 1;
+            }
+            Decision::Quit => {
+                println!("  quit — decisions so far are saved.");
+                break;
+            }
+        }
+        println!();
+    }
+
+    println!(
+        "{} onboarded · {} ignored · {} skipped · {} failed",
+        tally.onboarded, tally.ignored, tally.skipped, tally.failed
+    );
+    if tally.onboarded > 0 {
+        if let Some(p) = audit.path() {
+            println!("audit log: {}", p.display());
+        }
+    }
+    if tally.failed > 0 {
+        std::process::exit(1);
+    }
+    Ok(())
+}
+
+/// Print the per-repo context block: identity + size · branch · origin · last
+/// commit, and a warning about uncommitted/untracked work that won't be backed
+/// up (ADR-0017).
+fn print_candidate(idx: usize, total: usize, name: &str, repo: &Path) -> Result<()> {
+    let branch = git::current_branch(repo)?.unwrap_or_else(|| "(detached)".into());
+    let size = dir_size_human(repo).unwrap_or_else(|| "?".into());
+    let origin = match git::remote_url(repo, "origin")? {
+        Some(url) => format!("{} origin", short_host(&url)),
+        None => "no origin".into(),
+    };
+    let last = match git::last_commit_date(repo)? {
+        Some(d) => format!("last commit {d}"),
+        None => "no commits".into(),
+    };
+    println!("[{idx}/{total}]  {name}");
+    println!("        {size} · {branch} · {origin} · {last}");
+
+    let wt = git::working_tree(repo)?;
+    let uncommitted = wt.staged + wt.unstaged + wt.conflicts;
+    if uncommitted > 0 || wt.untracked > 0 {
+        println!(
+            "        {uncommitted} uncommitted, {} untracked (won't be backed up)",
+            wt.untracked
+        );
+    }
+    Ok(())
+}
+
+enum Decision {
+    Onboard,
+    Repoint,
+    Ignore,
+    Skip,
+    Quit,
+}
+
+/// Prompt for one repo's decision, re-asking on invalid input. `y` (onboard) is
+/// offered only when the repo isn't blocked and needs a fresh create; `r`
+/// (repoint) replaces it for the backup-only sub-state.
+fn prompt_decision(blocked: bool, kind: Onboard) -> Result<Decision> {
+    let action = if blocked {
+        None
+    } else if kind == Onboard::Repoint {
+        Some("repoint (r)")
+    } else {
+        Some("onboard (y)")
+    };
+    let prompt = match action {
+        Some(a) => format!("  {a} / ignore (n) / skip (s) / quit (q) ? "),
+        None => "  ignore (n) / skip (s) / quit (q) ? ".into(),
+    };
+
+    loop {
+        print!("{prompt}");
+        std::io::stdout().flush().ok();
+        let mut input = String::new();
+        // EOF (e.g. piped/closed stdin) reads as a graceful quit.
+        if std::io::stdin().read_line(&mut input)? == 0 {
+            return Ok(Decision::Quit);
+        }
+        match input.trim() {
+            "y" | "Y" if action == Some("onboard (y)") => return Ok(Decision::Onboard),
+            "r" | "R" if action == Some("repoint (r)") => return Ok(Decision::Repoint),
+            "n" | "N" => return Ok(Decision::Ignore),
+            "s" | "S" | "" => return Ok(Decision::Skip),
+            "q" | "Q" => return Ok(Decision::Quit),
+            other => println!("  (didn't understand `{other}`)"),
+        }
+    }
+}
+
+/// Best-effort human-readable size of the working copy (`du -sh`); `None` if the
+/// tool isn't available, so the context line degrades gracefully.
+fn dir_size_human(repo: &Path) -> Option<String> {
+    let out = std::process::Command::new("du")
+        .args(["-sh", "--"])
+        .arg(repo)
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let s = String::from_utf8_lossy(&out.stdout);
+    s.split_whitespace().next().map(|sz| sz.to_string())
+}
+
+/// Host portion of a remote URL for the context line: `git@github.com:o/r.git`
+/// → `github.com`, `ssh://acer-lan/…` → `acer-lan`. Falls back to the raw URL.
+fn short_host(url: &str) -> String {
+    let rest = url
+        .split_once("://")
+        .map(|(_, r)| r)
+        .unwrap_or(url)
+        .trim_start_matches('/');
+    let authority = rest.split(['/', ':']).next().unwrap_or(rest);
+    let host = authority.rsplit('@').next().unwrap_or(authority);
+    if host.is_empty() {
+        url.to_string()
+    } else {
+        host.to_string()
+    }
 }
 
 // ============================ gr clone ======================================

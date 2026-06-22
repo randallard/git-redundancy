@@ -65,6 +65,26 @@ pub fn remote_url(repo: &Path, remote: &str) -> Result<Option<String>> {
     }
 }
 
+/// Committer date of `HEAD` as `YYYY-MM-DD`, or `None` when the repo has no
+/// commits yet. Used for the `gr onboard` per-repo context line (ADR-0017).
+pub fn last_commit_date(repo: &Path) -> Result<Option<String>> {
+    let out = git(repo, &["log", "-1", "--format=%cs"])?;
+    if out.status.success() {
+        let d = stdout_string(&out).trim().to_string();
+        Ok((!d.is_empty()).then_some(d))
+    } else {
+        Ok(None) // no commits on HEAD yet
+    }
+}
+
+/// Does the repo have at least one commit reachable from `HEAD`? A commitless
+/// repo can't be onboarded as-is (ADR-0017 pre-flight).
+pub fn has_commits(repo: &Path) -> Result<bool> {
+    Ok(git(repo, &["rev-parse", "--verify", "--quiet", "HEAD"])?
+        .status
+        .success())
+}
+
 /// Working-tree change counts.
 pub fn working_tree(repo: &Path) -> Result<WorkingTree> {
     let out = git(repo, &["status", "--porcelain=v2", "-z"])?;

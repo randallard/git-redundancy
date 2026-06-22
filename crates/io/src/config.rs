@@ -14,6 +14,11 @@ pub struct Config {
     pub repos: Vec<PathBuf>,
     /// Paths to exclude even if found under a root.
     pub exclude: Vec<PathBuf>,
+    /// Repos deliberately left unprotected (ADR-0017). `gr onboard`'s `n` appends
+    /// here. They are **not** hidden: `gr status` still lists them as `ignored`,
+    /// so a chosen non-action never becomes a silent gap. Matched by home name
+    /// (the `gr status` identity), or directory name.
+    pub ignore: Vec<String>,
     /// Remotes to show as columns / push to, in order. Empty = use each repo's own remotes.
     pub default_remotes: Vec<String>,
     /// Push transport behavior (ADR-0009).
@@ -125,6 +130,56 @@ impl Config {
     pub fn backup_enabled(&self) -> bool {
         !self.backup.root.as_os_str().is_empty() && !self.backup.aliases.is_empty()
     }
+
+    /// Is `name` (a home name or directory name) on the deliberate-ignore list
+    /// (ADR-0017)?
+    pub fn is_ignored(&self, name: &str) -> bool {
+        self.ignore.iter().any(|i| i == name)
+    }
+
+    /// Append `name` to the top-level `ignore` array in the config file at the
+    /// default path, preserving the file's comments and formatting (ADR-0017's
+    /// config-first, human-editable ignore list). Idempotent — a name already
+    /// present is a no-op. Creates the file/array as needed.
+    pub fn append_ignore(name: &str) -> Result<()> {
+        Self::append_ignore_at(&Self::config_path(), name)
+    }
+
+    /// `append_ignore` against an explicit path (testable without touching XDG).
+    pub fn append_ignore_at(path: &Path, name: &str) -> Result<()> {
+        use toml_edit::{Array, DocumentMut};
+
+        let text = match std::fs::read_to_string(path) {
+            Ok(s) => s,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
+            Err(e) => {
+                return Err(e).with_context(|| format!("reading config at {}", path.display()))
+            }
+        };
+        let mut doc: DocumentMut = text
+            .parse()
+            .with_context(|| format!("parsing config at {}", path.display()))?;
+
+        // Ensure a top-level `ignore` array exists, then append if absent.
+        // toml_edit renders root key/values above any `[table]`, so the entry
+        // stays top-level (not absorbed into a later section) and comments survive.
+        if doc.get("ignore").is_none() {
+            doc["ignore"] = toml_edit::value(Array::new());
+        }
+        let arr = doc["ignore"]
+            .as_array_mut()
+            .with_context(|| format!("`ignore` in {} is not an array", path.display()))?;
+        if !arr.iter().any(|v| v.as_str() == Some(name)) {
+            arr.push(name);
+        }
+
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)
+                .with_context(|| format!("creating config dir {}", parent.display()))?;
+        }
+        std::fs::write(path, doc.to_string())
+            .with_context(|| format!("writing config at {}", path.display()))
+    }
 }
 
 #[cfg(test)]
@@ -185,5 +240,41 @@ mod tests {
         assert!(cfg.backup_enabled());
         assert_eq!(cfg.backup.root, PathBuf::from("/data/git"));
         assert_eq!(cfg.backup.aliases, vec!["acer-lan", "acer-ts"]);
+    }
+
+    #[test]
+    fn append_ignore_adds_top_level_entry_and_keeps_comments_and_sections() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        // A realistic file: a comment, a top-level key, and a section after it.
+        std::fs::write(
+            &path,
+            "# keep me\nroots = [\"/data/Development\"]\n\n[server]\nroot = \"/data/git\"\n",
+        )
+        .unwrap();
+
+        Config::append_ignore_at(&path, "scratch").unwrap();
+        Config::append_ignore_at(&path, "scratch").unwrap(); // idempotent
+        Config::append_ignore_at(&path, "vendored").unwrap();
+
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(text.contains("# keep me"), "comment preserved:\n{text}");
+
+        // Reloads as TOP-LEVEL ignore (not absorbed into [server]), de-duped,
+        // with the rest of the config intact.
+        let cfg = Config::load_from(&path).unwrap();
+        assert_eq!(cfg.ignore, vec!["scratch", "vendored"]);
+        assert!(cfg.is_ignored("scratch") && !cfg.is_ignored("other"));
+        assert_eq!(cfg.roots, vec![PathBuf::from("/data/Development")]);
+        assert!(cfg.server_enabled());
+    }
+
+    #[test]
+    fn append_ignore_creates_a_missing_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("nested/config.toml");
+        Config::append_ignore_at(&path, "only").unwrap();
+        let cfg = Config::load_from(&path).unwrap();
+        assert_eq!(cfg.ignore, vec!["only"]);
     }
 }

@@ -40,6 +40,8 @@ enum Command {
     Clone(CloneArgs),
     /// Reconcile easy work both ways: push ahead, fast-forward behind (ADR-0013).
     Sync(SyncArgs),
+    /// Walk un-redundant repos one at a time: onboard / ignore / skip / quit (ADR-0017).
+    Onboard(OnboardArgs),
 }
 
 #[derive(clap::Args)]
@@ -99,6 +101,14 @@ pub struct CreateArgs {
 }
 
 #[derive(clap::Args)]
+pub struct OnboardArgs {
+    /// Preview the walk: show each candidate and what would happen, prompt for
+    /// nothing, change nothing (and don't audit).
+    #[arg(long)]
+    pub dry_run: bool,
+}
+
+#[derive(clap::Args)]
 pub struct CloneArgs {
     /// Home name to clone (`<root>/<name>.git` on the server).
     pub name: String,
@@ -147,6 +157,7 @@ fn main() -> Result<()> {
         Some(Command::Create(args)) => lifecycle::run_create(&args),
         Some(Command::Clone(args)) => lifecycle::run_clone(&args),
         Some(Command::Sync(args)) => lifecycle::run_sync(&args),
+        Some(Command::Onboard(args)) => lifecycle::run_onboard(&args),
     }
 }
 
@@ -219,7 +230,13 @@ fn run_status(args: &StatusArgs) -> Result<()> {
     let show_backup = survey.backup.is_some();
     let mut rows = Vec::new();
     for p in &survey.presences {
-        let life = if home_known {
+        // A deliberately-ignored repo (ADR-0017) stays visible but reads `ignored`
+        // and drops the `+N⚠` nag — the operator already decided not to back it up.
+        let ignored = cfg.is_ignored(&p.home_name)
+            || p.local_dir.as_deref().is_some_and(|d| cfg.is_ignored(d));
+        let life = if ignored {
+            "ignored".to_string()
+        } else if home_known {
             p.lifecycle.label().to_string()
         } else {
             "?".to_string()
@@ -233,6 +250,7 @@ fn run_status(args: &StatusArgs) -> Result<()> {
                 &file_name_string(repo),
                 &life,
                 &backup,
+                ignored,
                 &shown,
                 args,
                 &mut rows,
@@ -292,11 +310,13 @@ fn backup_label(backup: &Option<git_redundancy_io::BackupState>, home_name: &str
 
 /// Build the fleet rows for one local repo: branch rows + lifecycle on the first
 /// row + the `+N⚠` indicator on the current row (default view only).
+#[allow(clippy::too_many_arguments)]
 fn build_local_rows(
     repo: &Path,
     display: &str,
     life: &str,
     backup: &str,
+    ignored: bool,
     shown: &[String],
     args: &StatusArgs,
     rows: &mut Vec<render::Row>,
@@ -326,8 +346,8 @@ fn build_local_rows(
 
     // Primary remote for the "others" count: the first shown remote present.
     let primary = shown.iter().find(|r| repo_remotes.contains(*r)).cloned();
-    let others = if args.all_branches {
-        None // every branch is already a row; the indicator is redundant
+    let others = if args.all_branches || ignored {
+        None // -a: every branch is a row already; ignored: the nag is suppressed.
     } else {
         others_needing_attention(repo, &current, primary.as_deref())?
     };

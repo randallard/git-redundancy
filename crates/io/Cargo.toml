@@ -11,3 +11,9 @@ git-redundancy-core.workspace = true
 anyhow.workspace = true
 serde.workspace = true
 toml = "0.8"
+# Comment- and format-preserving edits to config.toml (the `ignore` list, ADR-0017).
+# Already in the tree via `toml 0.8`; used directly here.
+toml_edit = "0.22"
+
+[dev-dependencies]
+tempfile = "3"

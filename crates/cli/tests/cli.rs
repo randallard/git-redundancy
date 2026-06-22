@@ -229,6 +229,48 @@ fn create_without_server_config_fails_with_guidance() {
 }
 
 #[test]
+fn onboard_without_server_config_fails_with_guidance() {
+    let fx = Fixture::new(); // default config has no [server]
+    fx.gr()
+        .arg("onboard")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("no [server] configured"));
+}
+
+#[test]
+fn onboard_with_unreachable_server_fails_loudly() {
+    let fx = Fixture::new();
+    // [server] is configured but its alias can't be reached: onboarding provisions
+    // on the server, so it refuses rather than half-acting (ADR-0012 §5).
+    fx.write_config(&format!(
+        "roots = [\"{}\"]\n[server]\nroot = \"/data/git\"\naliases = [\"gr-no-such-host.invalid\"]\n",
+        fx.dev.display(),
+    ));
+    fx.gr()
+        .arg("onboard")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("home server unreachable"));
+}
+
+#[test]
+fn ignored_repo_shows_ignored_lifecycle_in_status() {
+    let fx = Fixture::new();
+    // Offline status keeps it hermetic; the ignore list still applies and the
+    // repo stays visible as `ignored` rather than being hidden (ADR-0017).
+    fx.write_config(&format!(
+        "roots = [\"{}\"]\nignore = [\"myrepo\"]\n[transport]\norder = [\"data-lan\", \"data\"]\n",
+        fx.dev.display(),
+    ));
+    fx.gr()
+        .args(["status", "--offline"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("myrepo").and(predicate::str::contains("ignored")));
+}
+
+#[test]
 fn clone_target_outside_roots_is_refused_with_guidance() {
     let fx = Fixture::new();
     fx.write_config(&format!(

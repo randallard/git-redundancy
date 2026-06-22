@@ -299,7 +299,9 @@ dependencies = [
  "anyhow",
  "git-redundancy-core",
  "serde",
+ "tempfile",
  "toml",
+ "toml_edit",
 ]
 
 [[package]]

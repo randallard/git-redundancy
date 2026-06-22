@@ -10,8 +10,9 @@ backed up, and what still needs attention?"**
 It is deliberately conservative: it **never auto-commits, never force-pushes, and never
 touches a diverged branch**. It backs up what's safe and tells you loudly about the rest.
 
-> Status: early (`0.0.0`), but the core works and is well-tested. `gr status`, `gr push`, and
-> the `create` / `clone` / `sync` lifecycle commands are implemented; see [Status](#status).
+> Status: early (`0.0.0`), but the core works and is well-tested. `gr status`, `gr push`, the
+> `create` / `clone` / `sync` lifecycle commands, and the `onboard` guided walk are
+> implemented; see [Status](#status).
 
 ## Why
 
@@ -32,6 +33,10 @@ without clobbering anything. That's `gr`.
 - **Lifecycle commands** — `create` a bare home for a local repo, `clone` a home you don't
   have yet, or `sync` to reconcile: easy-push ahead, fast-forward-pull behind (clean tree
   only), report diverged. `-i` confirms each action.
+- **Guided onboarding** — `gr onboard` walks the un-redundant repos one at a time:
+  **onboard** (create + back up), **ignore** (record it as deliberately unprotected), **skip**,
+  or **quit**. Each decision is saved as you go, so the walk is resumable; `--dry-run` previews
+  it. Ignored repos stay visible in `gr status` as `ignored` — never silently dropped.
 - **Safe by construction** — only *fast-forward* / *new-branch* pushes and clean
   fast-forward pulls; **never auto-commits, force-pushes, or auto-merges**. Diverged/behind
   are skipped and reported; dirty trees are surfaced but never block backing up committed work.
@@ -78,6 +83,10 @@ repos = [
 
 # ...or discover them within roots (each immediate child holding a .git):
 roots = ["/data/Development"]
+
+# Repos to deliberately leave unprotected. `gr onboard`'s "ignore" appends here;
+# they still appear in `gr status` as `ignored` (never silently hidden).
+ignore = ["scratchpad", "vendored-thing"]
 
 # Remotes to show as columns / push to, in order.
 default_remotes = ["data-lan", "data"]
@@ -130,7 +139,8 @@ $ gr status
 ```
 
 Columns: **Life** = lifecycle (`linked` / `local-only` = needs `create` / `home-only` =
-needs `clone`; `?` when the server isn't configured/reachable); **S/U/?/Cf** = staged /
+needs `clone` / `ignored` = deliberately unprotected; `?` when the server isn't
+configured/reachable); **S/U/?/Cf** = staged /
 unstaged / untracked / conflicts (`·` = none); per-remote = `↑ahead` / `↓behind`, or `new` /
 `ok` / `diverged` / `CONFLICT`; **⚠** = `+N` other branches that need attention. In a
 terminal the cells are colorized; disable with `--no-color` (also auto-off when piped or
@@ -200,6 +210,41 @@ Close the gap between local working copies and their bare homes (needs a `[serve
 All three are audited; all require the server reachable and fail loudly rather than
 half-acting. (`gr homes` is a thin alias for the fleet `status` view.)
 
+### `gr onboard`
+
+A guided walk down the repos that aren't redundant yet, deciding each one
+([ADR-0017](docs/adr/0017-onboard-guided-walk-and-ignore-list.md)):
+
+```console
+$ gr onboard
+[2/4]  squaredance
+        12M · main · github.com origin · last commit 2026-05-30
+        7 uncommitted, 16 untracked (won't be backed up)
+  onboard (y) / ignore (n) / skip (s) / quit (q) ? n
+  ignored — recorded in ~/.config/git-redundancy/config.toml
+
+[3/4]  infra-notes
+        4.0M · main · no origin · last commit 2026-06-19
+  onboard (y) / ignore (n) / skip (s) / quit (q) ? y
+  creating bare home /data/git/infra-notes.git via acer-lan …
+  …
+  created `infra-notes` (2 branch(es) pushed) — redundant (primary + backup)
+```
+
+- **`y`** onboards via `create -a` (all branches → the full redundant topology, ADR-0016).
+- **`n`** appends the repo to the config `ignore` list — it stops nagging but stays visible
+  in `gr status` as `ignored`.
+- **`s`** leaves it for now (asked again next run); **`q`** stops the walk.
+- Each `y`/`n` is committed as it happens, so the walk is **resumable** — it shrinks each run
+  until every repo is redundant or deliberately ignored.
+- Detached-HEAD / commitless repos are **flagged** ("can't onboard as-is") rather than erroring
+  mid-create. `--dry-run` previews the whole walk without prompting or changing anything.
+
+Onboarding needs the home server reachable (it provisions on it). A fourth choice, **`r`
+(repoint)**, is offered for repos whose home is on the *backup* but not the primary; its
+mechanics are [ADR-0018](docs/adr/0018-repoint-backup-only-homes-into-current-topology.md)
+and not yet implemented.
+
 ## How it works
 
 A three-crate Cargo workspace following a functional-core / imperative-shell split:
@@ -228,10 +273,12 @@ SSH transport — which is where the optional FIPS enforcement lives.
 ## Status
 
 Implemented and tested: `gr status` (home-aware, with a per-repo detail view and `--json`),
-`gr push`, and the `create` / `clone` / `sync` lifecycle commands — all with transport
-failover and audit logging. `create` provisions the **full fleet topology** when a `[backup]`
-is set (ADR-0016): primary home + `post-receive` hook + hardened backup home, redundant from one
-command. Hermetic integration tests, property tests, and a Kani-verified
+`gr push`, the `create` / `clone` / `sync` lifecycle commands, and the `gr onboard` guided
+walk — all with transport failover and audit logging. `create` provisions the **full fleet
+topology** when a `[backup]` is set (ADR-0016): primary home + `post-receive` hook + hardened
+backup home, redundant from one command. `onboard` (ADR-0017) walks the un-redundant repos
+y/n/s/q with a config `ignore` list; the `r`/repoint path (ADR-0018) is designed but not yet
+built. Hermetic integration tests, property tests, and a Kani-verified
 safety invariant; CI runs the gates + Kani + a coverage gate + supply-chain checks
 (`cargo-deny`, `cargo-vet`, SBOM) on every push. Not yet: the *mandatory* (server-side) FIPS
 tier. A GUI is a possible later phase (Tauri, reusing the Rust core — `--json` is the seam).

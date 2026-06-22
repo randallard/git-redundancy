@@ -33,6 +33,19 @@ gate). **Open items before this increment is truly "done":**
   itself (candidate detection, the `ignore` write, the prompt loop) and repoint's gate +
   five-step flip are unproven against the real fleet. Recommended: `--dry-run` each, then a
   throwaway repo, before the original 7.
+- **⚠️ Stale second-alias status — `data` shows non-`ok` (`↑n`) until a manual `git fetch`.**
+  `gr push` uses transport failover: `data-lan` and `data` are two paths to the **same** server
+  (acer), so it pushes **once** via the first that works (LAN). The server ref is updated, but
+  only the *used* alias's remote-tracking ref moves — the **other** alias (`data`) keeps its old
+  tracking ref, so the next `gr status` reports it as `↑n` / not-`ok` even though the work is
+  safely on the server. Today it clears only after a manual `git fetch data`. **This is
+  misleading** — it reads like an unbacked-up branch when nothing is wrong. To address (pick one,
+  ideally by ADR): after a failover push, **also update the sibling alias's tracking ref** for
+  same-server remotes (e.g. `git fetch <other-alias>` or a local ref copy); or **collapse
+  same-server aliases** into one logical destination in the status model so only one column shows;
+  or at minimum **detect same-server aliases and annotate** the stale one rather than flagging it
+  as behind. (Observed 2026-06-22 backing up `cmecf_local_mods`: pushed via `data-lan` → `ok`,
+  but `data` showed `↑1` until fetched; `Bkp`/replication to tenx was already `ok`.)
 
 **Decisions locked (see ADRs):** Rust CLI ([0001](adr/0001-use-rust-for-the-cli.md)) ·
 functional core / imperative shell ([0002](adr/0002-functional-core-imperative-shell.md)) ·

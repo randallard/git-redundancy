@@ -30,7 +30,7 @@ struct Cli {
 enum Command {
     /// Show a table of configured repos: working-tree state and per-remote sync.
     Status(StatusArgs),
-    /// Push easy (fast-forward), committed work home. (Not yet implemented.)
+    /// Push easy (fast-forward / new-branch), committed work home (skips behind/diverged, never forces).
     Push(PushArgs),
     /// Alias for `status` — the lifecycle is now a column there (ADR-0012/0014).
     Homes(HomesArgs),

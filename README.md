@@ -187,6 +187,10 @@ Close the gap between local working copies and their bare homes (needs a `[serve
 
 - **`gr create [name]`** — create a bare home on the server for the current repo, wire
   `data`/`data-lan`, and push. Refuses if a home of that name already exists.
+  *(Decided, [ADR-0016](docs/adr/0016-create-provisions-full-fleet-topology.md), impl pending:
+  when a `[backup]` is configured, `create` also installs the primary's `post-receive`
+  replication hook and creates + hardens the backup home — so onboarding yields a **redundant**
+  repo, not just one present on the primary.)*
 - **`gr clone <name> [dir]`** — clone a home that exists on the server but isn't here yet.
   The target must land inside a configured root (default `<roots[0]>/<name>`); `origin` is
   dropped so it stays reserved for a cloud remote.
@@ -228,8 +232,11 @@ Implemented and tested: `gr status` (home-aware, with a per-repo detail view and
 `gr push`, and the `create` / `clone` / `sync` lifecycle commands — all with transport
 failover and audit logging. Hermetic integration tests, property tests, and a Kani-verified
 safety invariant; CI runs the gates + Kani + a coverage gate + supply-chain checks
-(`cargo-deny`, `cargo-vet`, SBOM) on every push. Not yet: the *mandatory* (server-side) FIPS
-tier. A GUI is a possible later phase (Tauri, reusing the Rust core — `--json` is the seam).
+(`cargo-deny`, `cargo-vet`, SBOM) on every push. Not yet: full-topology onboarding
+([ADR-0016](docs/adr/0016-create-provisions-full-fleet-topology.md) — `create` also installing
+the primary's replication hook and creating + hardening the backup home, so a new repo is
+redundant from one command); the *mandatory* (server-side) FIPS tier. A GUI is a possible later
+phase (Tauri, reusing the Rust core — `--json` is the seam).
 
 ## License
 

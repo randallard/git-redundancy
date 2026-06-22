@@ -63,3 +63,4 @@ where a decision touches a control we cite the 800-53 family inline.)
 | [0013](0013-lifecycle-commands-create-clone-sync.md) | Lifecycle commands: `create` / `clone` / `sync` for the local↔home gap | Accepted |
 | [0014](0014-status-ux-lifecycle-and-repo-detail.md) | Status UX: lifecycle in the fleet view, an "others" indicator, and a repo detail view | Accepted |
 | [0015](0015-backup-server-presence-column.md) | A `[backup]` server and a `Bkp` presence column in `gr status` | Accepted |
+| [0016](0016-create-provisions-full-fleet-topology.md) | `gr create` provisions the full fleet topology (replication hook + hardened backup home) | Accepted |

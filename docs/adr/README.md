@@ -64,3 +64,5 @@ where a decision touches a control we cite the 800-53 family inline.)
 | [0014](0014-status-ux-lifecycle-and-repo-detail.md) | Status UX: lifecycle in the fleet view, an "others" indicator, and a repo detail view | Accepted |
 | [0015](0015-backup-server-presence-column.md) | A `[backup]` server and a `Bkp` presence column in `gr status` | Accepted |
 | [0016](0016-create-provisions-full-fleet-topology.md) | `gr create` provisions the full fleet topology (replication hook + hardened backup home) | Accepted |
+| [0017](0017-onboard-guided-walk-and-ignore-list.md) | `gr onboard` — a guided per-repo walk, with a config `ignore` list | Accepted |
+| [0018](0018-repoint-backup-only-homes-into-current-topology.md) | `repoint` — bringing a backup-only home into the current primary→backup topology | Accepted |

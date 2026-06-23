@@ -411,12 +411,15 @@ fn push_new_then_uptodate_with_failover_and_audit() {
         .success()
         .stdout(predicate::str::contains("pushed (new)"));
 
-    // Failover pushed once: data-lan is ok, data is still new.
+    // Failover pushed once via data-lan. status now fetches before classifying
+    // (ADR-0019), so both transports to the *same* home read `ok` — the old stale
+    // `new` on the unfetched `data` column is gone. The audit log (below) is what
+    // records which transport actually did the push.
     fx.gr()
         .arg("status")
         .assert()
         .success()
-        .stdout(predicate::str::contains("ok").and(predicate::str::contains("new")));
+        .stdout(predicate::str::contains("ok").and(predicate::str::contains("new").not()));
 
     // Nothing to do now.
     fx.gr()
@@ -514,4 +517,62 @@ fn push_failure_exits_nonzero() {
         .failure()
         .code(1)
         .stdout(predicate::str::contains("FAILED"));
+}
+
+/// Regression for ADR-0019. After a *manual* `git remote set-url` repoints a
+/// remote at a home that is **behind** the working copy, the stale local
+/// tracking ref (still holding the old home's value, which equals the working
+/// copy) must not make `gr` report a false `up-to-date`/`ok` and skip the push.
+/// This is the exact field failure: a backup silently not taken.
+#[test]
+fn repoint_to_behind_home_still_pushes() {
+    let fx = Fixture::new();
+
+    // c1 lands on the original home; the data-lan tracking ref now equals c1.
+    fx.gr().arg("push").assert().success();
+
+    // A second home, seeded with c1 and then left behind.
+    let new_home = fx.root.join("new-home.git");
+    fx.git(&fx.root, &["init", "--bare", new_home.to_str().unwrap()]);
+    fx.git(&fx.workrepo, &["push", new_home.to_str().unwrap(), "main"]);
+
+    // Working copy advances to c2 and pushes to the *original* home, so the
+    // data-lan tracking ref now equals the working copy (c2).
+    fx.write("a.txt", "one\ntwo\nthree\nfour\n");
+    fx.commit_all("c2");
+    fx.gr().arg("push").assert().success();
+
+    // Manual repoint to the behind home — deliberately *no* fetch (the foot-gun).
+    // The tracking ref is still c2, equal to the working copy.
+    fx.git(
+        &fx.workrepo,
+        &["remote", "set-url", "data-lan", new_home.to_str().unwrap()],
+    );
+    fx.git(
+        &fx.workrepo,
+        &["remote", "set-url", "data", new_home.to_str().unwrap()],
+    );
+
+    // `--offline` trusts the stale ref → the false `ok` that masked the bug.
+    fx.gr()
+        .args(["status", "--offline"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("ok"));
+
+    // The fix: `push` fetches before classifying, sees the home is behind, and
+    // actually pushes c2 — not a false `up-to-date`.
+    fx.gr()
+        .arg("push")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("pushed (↑1)"));
+
+    // The behind home really did receive c2.
+    let new_head = fx.git(
+        &fx.root,
+        &["--git-dir", new_home.to_str().unwrap(), "rev-parse", "main"],
+    );
+    let work_head = fx.git(&fx.workrepo, &["rev-parse", "main"]);
+    assert_eq!(new_head.trim(), work_head.trim());
 }

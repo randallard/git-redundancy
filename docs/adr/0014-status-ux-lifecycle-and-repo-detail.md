@@ -46,7 +46,7 @@ Each row gains:
   **action `sync` would take** (push / ff-pull / *blocked: dirty* / *report: diverged*),
   so the detail view reads as a preview of `gr sync <repo>`.
 - `<repo>` is matched by the ADR-0012 **home name** (also accepting the local directory
-  name), so `gr status omarchy-setup` and `gr status USCourts_setup` resolve to the same
+  name), so `gr status omarchy-setup` and `gr status desktop-setup` resolve to the same
   repo.
 
 ### Carried over, unchanged

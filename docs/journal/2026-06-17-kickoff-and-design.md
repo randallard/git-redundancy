@@ -5,7 +5,7 @@
 
 ## Where this came from
 
-The seed was a real workflow need: after a day working on the laptop (`waed-7561`, Omarchy),
+The seed was a real workflow need: after a day working on the laptop (`dev-laptop`, Omarchy),
 back up all working repos to their bare "home" remotes on `tenx-rltec` (`/data/git/*.git`),
 documented in `infra-notes/GIT_REPOS_PLAN.md`. The existing setup had the bare repos and
 two remotes (`data` = Tailscale, `data-lan` = LAN) but **no one-shot "push all my working

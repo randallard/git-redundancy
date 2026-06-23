@@ -54,10 +54,20 @@ for repo in /data/Development/*/; do
   git -C "$repo" remote get-url data-lan >/dev/null 2>&1 || continue
   path=$(git -C "$repo" remote get-url data-lan | sed -E 's#^ssh://[^/]+##')  # /data/git/<repo>.git
   git -C "$repo" remote set-url data-lan "ssh://tenx-lan${path}"
-  git -C "$repo" remote get-url data >/dev/null 2>&1 \
-    && git -C "$repo" remote set-url data "ssh://tenx-ts${path}"
+  git -C "$repo" fetch --prune data-lan                  # refresh the tracking ref (ADR-0019)
+  git -C "$repo" remote get-url data >/dev/null 2>&1 && {
+    git -C "$repo" remote set-url data "ssh://tenx-ts${path}"
+    git -C "$repo" fetch --prune data
+  }
 done
 ```
+
+> **Why the `fetch --prune`:** `git remote set-url` repoints the remote but leaves
+> the *old* server's remote-tracking refs in place. Without refreshing them, `gr status`
+> and `gr push` classify against a stale ref and can report a false `ok` / `up-to-date`,
+> silently skipping a backup — the ADR-0019 bug. `gr`'s own `create`/`clone`/`repoint`
+> now fetch automatically; this manual loop does the same. (When repointing to a
+> *different* server than before, prefer `gr repoint`, which also re-roles the homes.)
 
 ## 5. git-redundancy config
 

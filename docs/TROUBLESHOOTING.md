@@ -25,6 +25,31 @@ or `(server unreachable …)`.
   (see "tenx is asleep" below) or the key isn't in your agent (`ssh-add -l`).
 - **`--offline`** also renders lifecycle as `?` — on purpose; it skips the server query.
 
+## `gr push` says `up-to-date` (or `gr status` shows `ok`) right after a `git remote set-url`
+
+**Symptom:** you repointed a repo's `data` / `data-lan` remote at a different home server with
+`git remote set-url`, and `gr status` shows `ok` / `gr push` reports `up-to-date` — but the new
+server is actually **behind** your working copy and the push never happened.
+
+**Cause:** `gr status` and `gr push` compute ahead/behind from the **local remote-tracking ref**
+without fetching (by design, for speed — see the [journal entry](journal/2026-06-22-4-stale-tracking-refs-after-repoint.md)).
+`git remote set-url` repoints the remote but does **not** update that ref, so it still holds the
+*old* server's value — which equals your working copy, hence the false `up-to-date`. (`gr sync` is
+unaffected; it fetches first.)
+
+**Fix (until the code fix lands):** fetch the repointed remote before trusting the status, so the
+tracking ref reflects the new server:
+
+```bash
+git -C /path/to/repo fetch data-lan
+git -C /path/to/repo fetch data
+gr status <repo>          # now truthful; push anything that shows ↑n on data-lan
+gr push --only <repo>
+```
+
+Verify against the **server ref** if in doubt — not `gr status`:
+`ssh acer-lan 'git --git-dir=/data/git/<repo>.git rev-parse <branch>'`.
+
 ## `data-lan` push fails / `tenx-rltec.local` resolves wrong when Zscaler is up
 
 **Symptom:** pushes to `data-lan` (the `tenx-lan` SSH alias) hang or fail, or

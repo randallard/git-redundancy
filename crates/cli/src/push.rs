@@ -72,6 +72,48 @@ pub fn run_push(args: &PushArgs) -> Result<()> {
             continue;
         }
 
+        // Freshness before classification (ADR-0019): refresh tracking refs so a
+        // repointed remote can't read as `up-to-date` against a stale ref and skip
+        // a genuinely-needed push. A fetch is read-only w.r.t. the remote, so it
+        // runs in dry-run too (keeps the preview honest). Failover treats the
+        // candidates as interchangeable — refresh until one succeeds and classify
+        // against that; otherwise refresh each. A remote we can't refresh is a real
+        // backup FAILURE (we couldn't reach the home), never a silent up-to-date.
+        let classify: Vec<String> = if failover {
+            match first_reachable(repo, &candidates) {
+                Some(r) => vec![r],
+                None => {
+                    line(
+                        &name,
+                        "—",
+                        &candidates[0],
+                        "FAILED: home unreachable (could not refresh)",
+                    );
+                    tally.failed += 1;
+                    continue;
+                }
+            }
+        } else {
+            let mut reachable = Vec::new();
+            for r in &candidates {
+                if git::fetch(repo, r).map(|o| o.success).unwrap_or(false) {
+                    reachable.push(r.clone());
+                } else {
+                    line(
+                        &name,
+                        "—",
+                        r,
+                        "FAILED: could not refresh (home unreachable)",
+                    );
+                    tally.failed += 1;
+                }
+            }
+            reachable
+        };
+        if classify.is_empty() {
+            continue;
+        }
+
         let branches: Vec<String> = if args.all_branches {
             git::local_branches(repo)?
         } else {
@@ -90,18 +132,20 @@ pub fn run_push(args: &PushArgs) -> Result<()> {
 
         for branch in &branches {
             if failover {
+                // Classify against the refreshed remote; still attempt the full
+                // candidate list so the push itself keeps LAN→Tailscale failover.
                 decide_and_push(
                     repo,
                     &name,
                     branch,
-                    &candidates[0],
+                    &classify[0],
                     &candidates,
                     args,
                     &audit,
                     &mut tally,
                 )?;
             } else {
-                for r in &candidates {
+                for r in &classify {
                     decide_and_push(
                         repo,
                         &name,
@@ -157,6 +201,16 @@ pub fn run_push(args: &PushArgs) -> Result<()> {
         std::process::exit(1);
     }
     Ok(())
+}
+
+/// Refresh tracking refs over `candidates` in failover order and return the first
+/// remote that fetches successfully — the one to classify against (ADR-0019).
+/// `None` when none are reachable.
+fn first_reachable(repo: &Path, candidates: &[String]) -> Option<String> {
+    candidates
+        .iter()
+        .find(|r| git::fetch(repo, r).map(|o| o.success).unwrap_or(false))
+        .cloned()
 }
 
 /// Classify `branch` vs `refr`, then push only if easy — trying `attempt` remotes

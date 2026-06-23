@@ -215,6 +215,15 @@ pub fn fetch(repo: &Path, remote: &str) -> Result<CmdOutcome> {
     Ok(outcome(git(repo, &["fetch", remote])?))
 }
 
+/// `git fetch --prune <remote>` — refresh tracking refs *and* drop ones the
+/// remote no longer has. Run right after repointing a remote's URL: `set-url`
+/// leaves the old server's tracking refs in place, which makes `status`/`push`
+/// classify against a stale ref (ADR-0019). The prune clears refs that belonged
+/// to the previous server so only the new server's state remains.
+pub fn fetch_prune(repo: &Path, remote: &str) -> Result<CmdOutcome> {
+    Ok(outcome(git(repo, &["fetch", "--prune", remote])?))
+}
+
 /// Branch names on a remote via `git ls-remote --heads <url>` (no clone needed),
 /// for listing a home's branches in the detail view (ADR-0014). `Err` if the
 /// remote is unreachable.

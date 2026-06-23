@@ -46,7 +46,7 @@ pub struct RepoPresence {
 }
 
 /// Derive a home name from a remote URL: the final path segment without `.git`.
-/// `ssh://tenx-lan/data/git/omarchy-setup.git` → `omarchy-setup`. Handles a
+/// `ssh://tenx-lan/data/git/web-app.git` → `web-app`. Handles a
 /// trailing slash and scp-like `host:path` forms; `None` if nothing is left.
 pub fn home_name_from_url(url: &str) -> Option<String> {
     let trimmed = url.trim().trim_end_matches('/');
@@ -58,41 +58,76 @@ pub fn home_name_from_url(url: &str) -> Option<String> {
 /// Join discovered local repos with the server's home names into a sorted,
 /// de-duplicated lifecycle view (ADR-0012).
 ///
-/// A local repo's *effective* home name is the one from its remote, or its
-/// directory name when it has no home yet. A match against `homes` is `Linked`;
-/// an unmatched local is `LocalOnly`; a home with no local is `HomeOnly`.
-/// Output is keyed and sorted by home name, so each home appears exactly once
-/// (the two transports `data`/`data-lan` resolve to one name upstream).
+/// A local repo is `Linked` only when it actually has a home remote whose name
+/// matches a server home — a working copy with **no** home remote is never
+/// `Linked`, even if its directory name happens to equal a home (a name
+/// coincidence is not a backup; ADR-0019). A wired-but-unmatched local is
+/// `LocalOnly` (its home isn't created yet); a home with no wired local is
+/// `HomeOnly`.
+///
+/// Entries that participate in the local↔home join key on the home name, so the
+/// two transports `data`/`data-lan` resolve to one row. A standalone local (no
+/// home remote) keys in a separate namespace so it and an unrelated, same-named
+/// home both survive as distinct rows. Output is sorted by home name.
 pub fn join_presences(locals: &[LocalRepo], homes: &[String]) -> Vec<RepoPresence> {
     let home_set: BTreeSet<&str> = homes.iter().map(String::as_str).collect();
-    let mut out: BTreeMap<String, RepoPresence> = BTreeMap::new();
+    // Key: `false` = joins on home name (linked / wired-only / home-only);
+    // `true` = a standalone local keyed by its own dir, never deduped into a home.
+    let mut out: BTreeMap<(bool, String), RepoPresence> = BTreeMap::new();
 
     for l in locals {
-        let effective = l.home_name.clone().unwrap_or_else(|| l.dir_name.clone());
-        let lifecycle = if home_set.contains(effective.as_str()) {
-            Lifecycle::Linked
-        } else {
-            Lifecycle::LocalOnly
-        };
-        out.insert(
-            effective.clone(),
-            RepoPresence {
-                home_name: effective,
-                local_dir: Some(l.dir_name.clone()),
-                lifecycle,
-            },
-        );
+        match &l.home_name {
+            // Wired to a home: Linked if that home exists, else LocalOnly (the
+            // home it names hasn't been created yet — `gr create`).
+            Some(h) => {
+                let lifecycle = if home_set.contains(h.as_str()) {
+                    Lifecycle::Linked
+                } else {
+                    Lifecycle::LocalOnly
+                };
+                out.insert(
+                    (false, h.clone()),
+                    RepoPresence {
+                        home_name: h.clone(),
+                        local_dir: Some(l.dir_name.clone()),
+                        lifecycle,
+                    },
+                );
+            }
+            // No home remote at all: LocalOnly, full stop. A directory-name match
+            // against a server home is a coincidence, not a link — so it keys in
+            // its own namespace and the home still surfaces as its own row.
+            None => {
+                out.insert(
+                    (true, l.dir_name.clone()),
+                    RepoPresence {
+                        home_name: l.dir_name.clone(),
+                        local_dir: Some(l.dir_name.clone()),
+                        lifecycle: Lifecycle::LocalOnly,
+                    },
+                );
+            }
+        }
     }
 
     for h in homes {
-        out.entry(h.clone()).or_insert_with(|| RepoPresence {
-            home_name: h.clone(),
-            local_dir: None,
-            lifecycle: Lifecycle::HomeOnly,
-        });
+        out.entry((false, h.clone()))
+            .or_insert_with(|| RepoPresence {
+                home_name: h.clone(),
+                local_dir: None,
+                lifecycle: Lifecycle::HomeOnly,
+            });
     }
 
-    out.into_values().collect()
+    let mut v: Vec<RepoPresence> = out.into_values().collect();
+    // Sort by display name; for a name shared by a standalone local and an
+    // unrelated home, show the local (has a dir) before the orphaned home.
+    v.sort_by(|a, b| {
+        a.home_name
+            .cmp(&b.home_name)
+            .then_with(|| a.local_dir.is_none().cmp(&b.local_dir.is_none()))
+    });
+    v
 }
 
 #[cfg(test)]
@@ -109,8 +144,8 @@ mod tests {
     #[test]
     fn home_name_from_various_urls() {
         assert_eq!(
-            home_name_from_url("ssh://tenx-lan/data/git/omarchy-setup.git").as_deref(),
-            Some("omarchy-setup")
+            home_name_from_url("ssh://tenx-lan/data/git/web-app.git").as_deref(),
+            Some("web-app")
         );
         assert_eq!(
             home_name_from_url("ssh://tenx-ts/data/git/proj.git/").as_deref(),
@@ -131,13 +166,13 @@ mod tests {
 
     #[test]
     fn linked_when_local_home_name_matches_a_server_home() {
-        // Directory name differs from the home name (USCourts_setup ↔ omarchy-setup).
-        let locals = [local("USCourts_setup", Some("omarchy-setup"))];
-        let homes = ["omarchy-setup".to_string()];
+        // Directory name differs from the home name (app-checkout ↔ app).
+        let locals = [local("app-checkout", Some("app"))];
+        let homes = ["app".to_string()];
         let v = join_presences(&locals, &homes);
         assert_eq!(v.len(), 1);
-        assert_eq!(v[0].home_name, "omarchy-setup");
-        assert_eq!(v[0].local_dir.as_deref(), Some("USCourts_setup"));
+        assert_eq!(v[0].home_name, "app");
+        assert_eq!(v[0].local_dir.as_deref(), Some("app-checkout"));
         assert_eq!(v[0].lifecycle, Lifecycle::Linked);
     }
 
@@ -148,6 +183,30 @@ mod tests {
         assert_eq!(v.len(), 1);
         assert_eq!(v[0].home_name, "fresh");
         assert_eq!(v[0].lifecycle, Lifecycle::LocalOnly);
+    }
+
+    #[test]
+    fn no_home_remote_is_local_only_even_if_dir_matches_a_home() {
+        // A repo wired only to a cloud `origin` (no `data` remote → home_name None)
+        // must NOT read as Linked just because its directory name collides with an
+        // unrelated server home. The two are distinct: an unprotected local plus an
+        // orphaned home — never a false `linked`/`Bkp ok` (ADR-0019).
+        let locals = [local("widgets", None)];
+        let homes = ["widgets".to_string()];
+        let v = join_presences(&locals, &homes);
+
+        let local_entry = v
+            .iter()
+            .find(|p| p.local_dir.as_deref() == Some("widgets"))
+            .expect("the local working copy should appear");
+        assert_eq!(local_entry.lifecycle, Lifecycle::LocalOnly);
+
+        assert!(
+            v.iter().any(|p| p.local_dir.is_none()
+                && p.home_name == "widgets"
+                && p.lifecycle == Lifecycle::HomeOnly),
+            "the same-named home should still surface as its own home-only row"
+        );
     }
 
     #[test]
@@ -162,11 +221,8 @@ mod tests {
 
     #[test]
     fn mixed_fleet_is_sorted_and_deduped() {
-        let locals = [
-            local("USCourts_setup", Some("omarchy-setup")),
-            local("brand-new", None),
-        ];
-        let homes = ["omarchy-setup".to_string(), "cmecf_inside".to_string()];
+        let locals = [local("app-checkout", Some("app")), local("brand-new", None)];
+        let homes = ["app".to_string(), "api".to_string()];
         let v = join_presences(&locals, &homes);
         let states: Vec<_> = v
             .iter()
@@ -175,9 +231,9 @@ mod tests {
         assert_eq!(
             states,
             vec![
+                ("api", Lifecycle::HomeOnly),
+                ("app", Lifecycle::Linked),
                 ("brand-new", Lifecycle::LocalOnly),
-                ("cmecf_inside", Lifecycle::HomeOnly),
-                ("omarchy-setup", Lifecycle::Linked),
             ]
         );
     }
@@ -216,9 +272,10 @@ mod tests {
             let v = join_presences(&locals, &homes);
             let home_set: BTreeSet<&str> = homes.iter().map(String::as_str).collect();
 
-            // Output is strictly ascending by home name ⇒ sorted and unique.
+            // Output is sorted by home name. Ties are allowed now: a standalone
+            // local (no home remote) and an unrelated home can share a name.
             for w in v.windows(2) {
-                proptest::prop_assert!(w[0].home_name < w[1].home_name);
+                proptest::prop_assert!(w[0].home_name <= w[1].home_name);
             }
 
             // Coverage: every local's effective name and every home is represented.
@@ -238,7 +295,10 @@ mod tests {
                         proptest::prop_assert!(p.local_dir.is_some() && on_server);
                     }
                     Lifecycle::LocalOnly => {
-                        proptest::prop_assert!(p.local_dir.is_some() && !on_server);
+                        // Always has a working copy. It may *coincide* with a
+                        // same-named but unrelated home (a standalone local with no
+                        // home remote), so `on_server` is not necessarily false.
+                        proptest::prop_assert!(p.local_dir.is_some());
                     }
                     Lifecycle::HomeOnly => {
                         proptest::prop_assert!(p.local_dir.is_none() && on_server);

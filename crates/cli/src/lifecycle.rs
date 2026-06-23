@@ -157,11 +157,7 @@ fn create_home(
 
     // Wire data / data-lan per ADR-0009, replacing any stale URL.
     for (remote, url) in server::remote_wiring(cfg, repos, &root, name, alias) {
-        if git::remote_url(repo, &remote)?.is_some() {
-            git::set_remote_url(repo, &remote, &url)?;
-        } else {
-            git::add_remote(repo, &remote, &url)?;
-        }
+        wire_and_refresh(repo, &remote, &url)?;
         println!("  remote {remote} → {url}");
     }
 
@@ -763,16 +759,28 @@ fn repoint_repo(
     // --- Step 5: repoint this repo's remotes at the primary — the literal repoint,
     // done last so every prior failure left the client on the working backup home.
     for (remote, url) in server::remote_wiring(cfg, repos, &s_root, name, &s_alias) {
-        if git::remote_url(repo, &remote)?.is_some() {
-            git::set_remote_url(repo, &remote, &url)?;
-        } else {
-            git::add_remote(repo, &remote, &url)?;
-        }
+        wire_and_refresh(repo, &remote, &url)?;
         println!("  remote {remote} → {url}");
     }
     let _ = audit.record(name, "-", &s_alias, "repointed", "");
     println!("repointed `{name}` → primary {s_alias}, backup {bk_alias} — redundant");
     Ok(RepointOutcome { failed: false })
+}
+
+/// Wire `remote → url` (set-url if it exists, else add), then refresh its
+/// tracking refs. `set-url` leaves the *old* server's tracking refs in place, so
+/// without this a freshly-repointed remote classifies against a stale ref in
+/// `status`/`push` (ADR-0019). Best-effort: the wiring is the durable change; if
+/// the home is momentarily unreachable the refresh falls to the next
+/// `status`/`push`/`sync`.
+fn wire_and_refresh(repo: &Path, remote: &str, url: &str) -> Result<()> {
+    if git::remote_url(repo, remote)?.is_some() {
+        git::set_remote_url(repo, remote, url)?;
+    } else {
+        git::add_remote(repo, remote, url)?;
+    }
+    let _ = git::fetch_prune(repo, remote);
+    Ok(())
 }
 
 /// Transport remotes in preference order (`transport.order`, else `default_remotes`).
@@ -812,14 +820,10 @@ pub fn run_clone(args: &CloneArgs) -> Result<()> {
         anyhow::bail!("clone failed: {}", first_line(&out.stderr));
     }
 
-    // Drop the clone's `origin` (reserved for the DCN cloud), then wire data/data-lan.
+    // Drop the clone's `origin` (reserved for the cloud), then wire data/data-lan.
     git::remove_remote(&dir, "origin")?;
     for (remote, rurl) in server::remote_wiring(&cfg, &repos, &root, name, &alias) {
-        if git::remote_url(&dir, &remote)?.is_some() {
-            git::set_remote_url(&dir, &remote, &rurl)?;
-        } else {
-            git::add_remote(&dir, &remote, &rurl)?;
-        }
+        wire_and_refresh(&dir, &remote, &rurl)?;
     }
     let audit = Audit::from_config(&cfg);
     let _ = audit.record(name, "-", &alias, "cloned", &dir.display().to_string());

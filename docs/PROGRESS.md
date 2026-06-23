@@ -33,19 +33,16 @@ gate). **Open items before this increment is truly "done":**
   itself (candidate detection, the `ignore` write, the prompt loop) and repoint's gate +
   five-step flip are unproven against the real fleet. Recommended: `--dry-run` each, then a
   throwaway repo, before the original 7.
-- **⚠️ Stale second-alias status — `data` shows non-`ok` (`↑n`) until a manual `git fetch`.**
-  `gr push` uses transport failover: `data-lan` and `data` are two paths to the **same** server
-  (acer), so it pushes **once** via the first that works (LAN). The server ref is updated, but
-  only the *used* alias's remote-tracking ref moves — the **other** alias (`data`) keeps its old
-  tracking ref, so the next `gr status` reports it as `↑n` / not-`ok` even though the work is
-  safely on the server. Today it clears only after a manual `git fetch data`. **This is
-  misleading** — it reads like an unbacked-up branch when nothing is wrong. To address (pick one,
-  ideally by ADR): after a failover push, **also update the sibling alias's tracking ref** for
-  same-server remotes (e.g. `git fetch <other-alias>` or a local ref copy); or **collapse
-  same-server aliases** into one logical destination in the status model so only one column shows;
-  or at minimum **detect same-server aliases and annotate** the stale one rather than flagging it
-  as behind. (Observed 2026-06-22 backing up `cmecf_local_mods`: pushed via `data-lan` → `ok`,
-  but `data` showed `↑1` until fetched; `Bkp`/replication to tenx was already `ok`.)
+- **✅ Stale second-alias status — `data` showed `↑n` until a manual `git fetch`.** *Resolved by
+  [ADR-0019](adr/0019-freshness-before-classification-status-push-fetch.md) (§7b).* `gr push` uses
+  transport failover: `data-lan` and `data` are two paths to the **same** server (acer), so it
+  pushes **once** via the first that works (LAN). Only the *used* alias's remote-tracking ref
+  moved, so the **other** (`data`) kept its old ref and the next `gr status` showed it as `↑n` even
+  though the work was safely on the server. This was the *benign* same-server face of the deeper
+  bug ADR-0019 fixes: `status` now **fetches before computing the columns**, so both aliases read
+  truthfully (and `push` fetches before classifying — the dangerous case where a repointed remote
+  read a false `up-to-date`). (Observed 2026-06-22 backing up `proj_local_mods`: pushed via
+  `data-lan` → `ok`, but `data` showed `↑1` until fetched.)
 
 **Decisions locked (see ADRs):** Rust CLI ([0001](adr/0001-use-rust-for-the-cli.md)) ·
 functional core / imperative shell ([0002](adr/0002-functional-core-imperative-shell.md)) ·
@@ -85,7 +82,7 @@ Workspace: `crates/{core,io,cli}` (ADR-0002), `#![forbid(unsafe_code)]` througho
   `core::presence` (home-name-from-URL identity, `LocalOnly`/`HomeOnly`/`Linked` join);
   `io::inventory` (SSH `ls` over the ADR-0009 aliases + `git ls-remote`, graceful
   degradation); `[server]` config block; `gr homes` surfaces it (`--offline` for the local
-  view). Verified live against tenx — `omarchy-setup`↔`USCourts_setup` resolves linked,
+  view). Verified live against tenx — `omarchy-setup`↔`desktop-setup` resolves linked,
   uncloned `myproject` shows home-only. *(The fleet/detail UX folds this into `gr status` in
   ADR-0014.)*
 - **Lifecycle commands ([ADR-0013](adr/0013-lifecycle-commands-create-clone-sync.md)):** pure
@@ -101,7 +98,7 @@ Workspace: `crates/{core,io,cli}` (ADR-0002), `#![forbid(unsafe_code)]` througho
   repos as rows, a **`+N⚠`** "others need attention" hint, and `--offline` + graceful
   degradation. **`gr status <repo>`** (positional) is the all-branches **detail view** with a
   `sync`-action column, resolving by home *or* directory name (so `gr status omarchy-setup`
-  finds `USCourts_setup`) and listing home-only branches via one `ls-remote`. Verified live.
+  finds `desktop-setup`) and listing home-only branches via one `ls-remote`. Verified live.
   *(`gr homes` is now superseded by `status`'s lifecycle column; kept as a quick diagnostic.)*
 - Gates green: build, `clippy -D warnings`, `cargo test` (**58 tests**: core 21 · io 15 ·
   cli 20 · render 2); coverage ~76% line (pure `core` 98–100%; the SSH-execution paths in
@@ -264,7 +261,7 @@ repo becomes *a name with up to two presences* — **local** (a working copy und
 | `linked`     | both exist → look at per-branch drift | `gr sync` |
 | `ignored`    | deliberately left unprotected (ADR-0017) | — (in the `ignore` list) |
 
-Identity is the **home name** (derived from the `data` remote URL, so `USCourts_setup` ↔
+Identity is the **home name** (derived from the `data` remote URL, so `desktop-setup` ↔
 `omarchy-setup` just works); `data`/`data-lan` dedupe to one home (ADR-0012).
 
 - **`gr create [name]`** — init the bare home on the primary, set its `HEAD`, wire
@@ -407,6 +404,39 @@ Path A is enforced ([0009](adr/0009-ssh-transport-aliases-mdns-hostkey-pinned.md
 [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md)): set the DHCP reservation for `tenx-rltec` and
 record the IP · pin tenx's SSH host key into `known_hosts` · confirm tenx's `sshd` offers
 the approved algorithm set · sort out tenx's suspend/idle so it stays reachable at day's end.
+
+---
+
+## 7b. Known issues / planned fixes
+
+**⚠️ Stale remote-tracking refs after a repoint — `gr push`/`gr status` under-report risk.**
+Discovered while dogfooding the fleet flip (2026-06-22); full write-up in the
+[journal](journal/2026-06-22-4-stale-tracking-refs-after-repoint.md). `ahead_behind` (io/git.rs:96)
+is network-free by design and reads the **local** tracking ref; `git remote set-url` doesn't update
+that ref, so after repointing a remote, `gr push` can report **`up-to-date` while skipping a
+genuinely-needed backup**, and `gr status` shows a false **`ok`**. `gr sync` is unaffected (it
+fetches first, lifecycle.rs:997). This is the one disallowed direction of error — *under*-reporting
+risk — so it's the top fix. Remediation per [ADR-0019](adr/0019-freshness-before-classification-status-push-fetch.md)
+— **implemented, pending live verification & commit:**
+
+- [x] **(safety) `gr push` fetch-then-classify** — refreshes the target remote (failover order)
+      before classifying; an unreachable home is a real FAILURE, never a silent up-to-date.
+      Regression test `repoint_to_behind_home_still_pushes`. *(push.rs)*
+- [x] **(correctness) `gr status` truthful columns** — `refresh_columns` fetches the shown remotes
+      before the per-remote ahead/behind; `--offline` keeps the fast, explicitly-stale path.
+      *(main.rs)*
+- [x] **(containment) repoint refreshes its ref** — `wire_and_refresh` (set-url/add + `fetch
+      --prune`) routes `create`/`clone`/`repoint` wiring; manual flow documented in SETUP.md §4.
+      *(git.rs `fetch_prune`, lifecycle.rs, SETUP.md)*
+- [x] **(classification) `linked` requires a real link, not a name match** — `join_presences` now
+      classifies a no-home-remote local as `LocalOnly` (never `Linked`), and a same-named home
+      still surfaces as its own `home-only` row. Tests updated + `no_home_remote_is_local_only_*`.
+      *(core/presence.rs)*
+
+Owed before this is "done": **live round-trip** (the dogfooded fleet — confirm against server
+refs), then commit (a follow-up journal entry documents the work commits). Until then the
+[TROUBLESHOOTING](TROUBLESHOOTING.md) workaround (`git fetch <remote>` after a manual `set-url`)
+still applies to any machine on the old build.
 
 ---
 

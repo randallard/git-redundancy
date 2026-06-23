@@ -29,14 +29,14 @@ Plumbing: `render.rs` gained the lifecycle/indicator columns and a `detail_table
 
 The fleet **Repo column shows the on-disk directory name**, not the home name. Identity is
 still the home name internally (and `gr status <name>` accepts either), but displaying
-`omarchy-setup` for a directory called `USCourts_setup` was more confusing than helpful in the
+`omarchy-setup` for a directory called `desktop-setup` was more confusing than helpful in the
 common case — and it would have surprised the existing tests. So: directory name for local
 repos, home name only for home-only rows. The mismatch still resolves correctly both ways
-(verified live: `gr status omarchy-setup` opens the `USCourts_setup` checkout).
+(verified live: `gr status omarchy-setup` opens the `desktop-setup` checkout).
 
 ## Verification
 
-- **Live against tenx:** the fleet showed `cmecf_* → linked`, `authentik`/`git-redundancy →
+- **Live against tenx:** the fleet showed `proj_* → linked`, `authentik`/`git-redundancy →
   local-only`, `myproject → home-only`; `gr status omarchy-setup` drilled in by home name
   (action `push (new)`); `gr status myproject` listed the home-only branch with action
   `clone`.

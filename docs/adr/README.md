@@ -66,3 +66,4 @@ where a decision touches a control we cite the 800-53 family inline.)
 | [0016](0016-create-provisions-full-fleet-topology.md) | `gr create` provisions the full fleet topology (replication hook + hardened backup home) | Accepted |
 | [0017](0017-onboard-guided-walk-and-ignore-list.md) | `gr onboard` — a guided per-repo walk, with a config `ignore` list | Accepted |
 | [0018](0018-repoint-backup-only-homes-into-current-topology.md) | `repoint` — bringing a backup-only home into the current primary→backup topology | Accepted |
+| [0019](0019-freshness-before-classification-status-push-fetch.md) | Freshness before classification — `status`/`push` fetch before computing ahead/behind | Accepted |

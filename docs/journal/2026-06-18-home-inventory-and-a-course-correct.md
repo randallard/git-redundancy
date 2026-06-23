@@ -10,15 +10,15 @@ tenx — via `gr homes`, verified live. The lifecycle/status UX (0014) and the
 ## How the day actually started (the course-correct, honestly)
 
 The ask was "an easy way to create a bare repo for a project and add the remote," referencing
-the git setup described in `infra-notes/USCourts_setup`. I took that too literally and built
-the wrong thing first: a standalone **`gitserver` bash CLI** dropped in `USCourts_setup`, a
+the git setup described in `infra-notes/desktop-setup`. I took that too literally and built
+the wrong thing first: a standalone **`gitserver` bash CLI** dropped in `desktop-setup`, a
 **single auto-selecting `tenx` SSH alias** (a `Match exec` TCP probe that picked LAN-vs-
-Tailscale on its own), and I **relinked `USCourts_setup`** onto that one remote.
+Tailscale on its own), and I **relinked `desktop-setup`** onto that one remote.
 
 That cut directly against this project's architecture, which I hadn't re-read yet:
 
 - **`git-redundancy` already is the CLI** — a Rust workspace (`gr`), not a place to bolt a
-  shell script onto a sibling repo. CLIs are their own projects; `USCourts_setup` only
+  shell script onto a sibling repo. CLIs are their own projects; `desktop-setup` only
   *references* them.
 - **ADR-0009 deliberately keeps two aliases** (`tenx-lan`/`tenx-ts`) and does failover at the
   **application layer** in `gr push` — so the chosen transport is visible, audited, and
@@ -26,7 +26,7 @@ That cut directly against this project's architecture, which I hadn't re-read ye
   block. Worse, "push to both" buys nothing here: both transports point at the *same* bare
   repo, so the only real need is "whichever path is up" — which `gr` already solves.
 
-Reverted all three: removed the `tenx` alias, restored `USCourts_setup` to `data`/`data-lan`
+Reverted all three: removed the `tenx` alias, restored `desktop-setup` to `data`/`data-lan`
 per ADR-0009 (confirmed both resolve to the same `main`), deleted the bash script + symlink.
 Lesson logged: **read the project's ADRs before adding capability that looks adjacent to it.**
 
@@ -38,7 +38,7 @@ decisions rather than one:
 - **[ADR-0012](../adr/0012-home-inventory-server-side-bare-repos.md)** — *home inventory.* A
   repo becomes *a name with up to two presences* (local / home), giving a lifecycle:
   `local-only` / `home-only` / `linked`. Identity is the **home name**, derived from the
-  `data` remote URL (so `USCourts_setup`↔`omarchy-setup` resolves with no hand-kept mapping);
+  `data` remote URL (so `desktop-setup`↔`omarchy-setup` resolves with no hand-kept mapping);
   the two transports dedupe to one home. Adds a `[server]` config block; reads **degrade**
   when tenx is unreachable; cloud `origin` is out of scope.
 - **[ADR-0013](../adr/0013-lifecycle-commands-create-clone-sync.md)** — `create`/`clone`/`sync`,
@@ -67,8 +67,8 @@ Functional-core / imperative-shell, per ADR-0002:
 
 ## Verification
 
-- **Live against tenx:** `omarchy-setup → linked → local: USCourts_setup` (identity mapping
-  works), uncloned `myproject → home-only`, `cmecf_* → linked`, the rest `local-only`.
+- **Live against tenx:** `omarchy-setup → linked → local: desktop-setup` (identity mapping
+  works), uncloned `myproject → home-only`, `proj_* → linked`, the rest `local-only`.
   `--offline` drops the network and the home-only row.
 - **Gates:** `fmt` + `clippy -D warnings` clean; **39 tests** (core 18 · io 11 · cli 10); the
   3 Kani integer proofs untouched (the new join logic is String/collection-shaped, so it's

@@ -4,7 +4,7 @@
 - Deciders: Ryan
 
 ## Context
-Both ends of this system run **Omarchy** — the laptop (`waed-7561`, the working-copy
+Both ends of this system run **Omarchy** — the laptop (`dev-laptop`, the working-copy
 client) and the home git server (`tenx-rltec`, hosting the bare repos at `/data/git`).
 Omarchy is DHH's opinionated **Arch Linux**-based desktop distribution (Hyprland + a
 curated package set). The OS choice shapes the crypto story (ADR-0005), the security

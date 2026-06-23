@@ -213,10 +213,10 @@ mod tests {
 
     #[test]
     fn parse_ls_output_to_home_names() {
-        let stdout = "/data/git/cmecf_inside.git\n/data/git/omarchy-setup.git/\n";
+        let stdout = "/data/git/api-server.git\n/data/git/web-app.git/\n";
         assert_eq!(
             parse_home_list(stdout),
-            vec!["cmecf_inside".to_string(), "omarchy-setup".to_string()]
+            vec!["api-server".to_string(), "web-app".to_string()]
         );
         // A glob that matched nothing (echoed verbatim) yields no names.
         assert!(parse_home_list("/data/git/*.git\n").is_empty());

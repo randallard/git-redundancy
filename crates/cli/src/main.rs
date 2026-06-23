@@ -336,6 +336,9 @@ fn build_local_rows(
     let current = git::current_branch(repo)?;
     let wt = git::working_tree(repo)?;
     let repo_remotes: BTreeSet<String> = git::remotes(repo)?.into_iter().collect();
+    if !args.offline {
+        refresh_columns(repo, shown, &repo_remotes);
+    }
     let branches: Vec<String> = if args.all_branches {
         git::local_branches(repo)?
     } else {
@@ -449,6 +452,9 @@ fn run_status_detail(
         let current = git::current_branch(repo)?;
         let wt = git::working_tree(repo)?;
         let repo_remotes: BTreeSet<String> = git::remotes(repo)?.into_iter().collect();
+        if !args.offline {
+            refresh_columns(repo, &shown, &repo_remotes);
+        }
         let primary = shown.iter().find(|r| repo_remotes.contains(*r)).cloned();
         for b in git::local_branches(repo)? {
             local_branches.insert(b.clone());
@@ -541,6 +547,19 @@ fn color_enabled(no_color: bool) -> bool {
         return false;
     }
     std::io::stdout().is_terminal()
+}
+
+/// Refresh the tracking refs for the columns we're about to render, so a remote
+/// that was repointed with `git remote set-url` isn't shown stale (a false `ok`
+/// against the *old* server's ref; ADR-0019). Best-effort: an unreachable remote
+/// keeps its last-known ref. `--offline` skips this entirely (the documented
+/// fast, explicitly-stale path).
+fn refresh_columns(repo: &Path, shown: &[String], repo_remotes: &BTreeSet<String>) {
+    for r in shown {
+        if repo_remotes.contains(r) {
+            let _ = git::fetch(repo, r);
+        }
+    }
 }
 
 /// Compute one remote cell for a (repo, branch, remote).

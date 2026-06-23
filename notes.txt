@@ -1,0 +1,28 @@
+needs verified - ADR 0019 - last response:
+
+  Code — the four fixes:
+  - #1 safety (push.rs) — gr push now refreshes tracking refs before classifying (failover order via first_reachable). The exact
+  field bug — a stale ref reading false up-to-date and skipping a backup — can't happen. An unreachable home is now a real FAILED
+  (exit 1), not a silent skip.
+  - #2 correctness (main.rs) — gr status fetches the shown remotes before computing columns (refresh_columns); --offline keeps the
+  fast, explicitly-stale path. This also resolves the older cosmetic "data shows ↑n" known-issue.
+  - #3 containment (git.rs + lifecycle.rs) — new fetch_prune; all three wiring sites (create/clone/repoint) route through
+  wire_and_refresh (set-url + fetch --prune), so a repoint never leaves a stale ref. Manual flow documented in SETUP.md §4.
+  - #4 classification (core/presence.rs) — a working copy with no data remote is LocalOnly, never Linked on a name coincidence; a
+  same-named home still surfaces as its own home-only row.
+
+  Tests: new repoint_to_behind_home_still_pushes (the regression — repoint to a behind home, assert it actually pushes) and
+  no_home_remote_is_local_only_even_if_dir_matches_a_home; updated the failover/proptest assertions that encoded the old stale
+  behavior. 26 cli + 22 core pass, clippy 0, fmt clean.
+
+  Docs/ADRs: ADR-0019 + journal entry (new); §7b checklist now marked implemented-pending-verification.
+
+  Work-name scrub: waed-7561→dev-laptop, USCourts_setup→desktop-setup, cmecf*→proj*, DCN→cloud across 10 doc/code files;
+  presence.rs/inventory.rs fixtures genericized. Verified zero remaining waed|uscourts|cmecf|cfsr|dcn|ryankhetlyr in the repo.
+
+  Owed before "done"
+
+  A live round-trip on the real fleet (verify against server refs), then commit — and that ties back to the operational thread
+  still open: USCourts_setup/desktop-setup and the cmecf repos still need acer brought current. Now that gr push fetches first,
+  the workaround is no longer needed — a plain gr push --only <repo> will do the right thing. Want to verify locally, then close
+  out that backup?

@@ -5,7 +5,7 @@
 
 ## Context
 The decision was "require FIPS-validated crypto now." Investigation on this machine
-(`waed-7561`, Arch Linux) showed that this **cannot be literally satisfied on Arch**, for
+(`dev-laptop`, Arch Linux) showed that this **cannot be literally satisfied on Arch**, for
 structural reasons, not a fixable gap:
 
 - **No FIPS provider present:** `openssl version` → OpenSSL **3.6.2**; `openssl list

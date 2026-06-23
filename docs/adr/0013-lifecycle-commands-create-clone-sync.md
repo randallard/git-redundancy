@@ -23,7 +23,7 @@ tree** (a pull). The non-obvious forces:
   sworn off.
 - **A cloned repo must end up discoverable.** ADR-0012 discovery is config-first: a clone
   dropped *outside* every configured `root` would be invisible to `gr` the moment it exists.
-- **`origin` is reserved.** The DCN cloud remote convention (ADR-0009 / ADR-0012) keeps
+- **`origin` is reserved.** The cloud remote convention (ADR-0009 / ADR-0012) keeps
   `origin` for GitLab; a fresh `git clone` would mint an `origin` pointing at tenx and
   collide with that.
 
@@ -51,7 +51,7 @@ From a bare home with no local copy:
   configured), `gr` does **not** clone: it prints the current roots and how to add one to
   the config, and stops — that is the user's move, not an implicit config edit.
 - Clones over the ADR-0009 transport, wires `data` / `data-lan`, and **removes the
-  clone-created `origin`** so `origin` stays reserved for the DCN cloud convention.
+  clone-created `origin`** so `origin` stays reserved for the cloud convention.
 
 ### `gr sync [repo...]` — reconcile a linked repo, easy work only
 Bring local and home into agreement by doing **only what is safe and easy**, per branch:
@@ -79,7 +79,7 @@ Bring local and home into agreement by doing **only what is safe and easy**, per
   discovery config-first and makes the roots config the single source of "where repos live,"
   at the cost of one extra "fix your config, then retry" round-trip in that case.
 - `origin` stays cloud-only by construction, so the redundant-home remotes (`data`/`data-lan`)
-  and the DCN remote never blur together.
+  and the cloud remote never blur together.
 - All three actions land in the AU audit log alongside `push`, so creating, cloning, and
   fast-forwarding are as accountable as pushing (`create`/`clone` record with branch `-`
   and a `created`/`cloned` result).

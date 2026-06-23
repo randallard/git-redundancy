@@ -24,7 +24,7 @@ whether a local clone exists. That is a new capability with three non-obvious fo
   tenx adds latency and a new failure mode (host asleep/unreachable — the orthogonal risk
   ADR-0009 already flagged). Reads must degrade, not break.
 - **Identity is not the directory name.** The local dir and the home repo name can differ
-  (`~/Development/USCourts_setup` ↔ `/data/git/omarchy-setup.git`). Joining local to home by
+  (`~/Development/desktop-setup` ↔ `/data/git/omarchy-setup.git`). Joining local to home by
   directory name is wrong.
 - **Two remotes, one home.** `data` (Tailscale) and `data-lan` (LAN) are interchangeable
   transports to the *same* bare repo (same `HostKeyAlias`, same server path, ADR-0009).
@@ -44,7 +44,7 @@ Joining the two yields a **lifecycle state** consumed downstream:
 ### 2. Identity = home name, derived not configured
 - For a **local** repo, the home name is the basename (minus `.git`) of its `data` /
   `data-lan` remote URL — so `omarchy-setup` is recovered from the remote even though the
-  directory is `USCourts_setup`. No per-repo mapping is stored.
+  directory is `desktop-setup`. No per-repo mapping is stored.
 - For **`create`** (ADR-0013), the home name defaults to the local directory name and is
   overridable.
 - For a **home-only** repo there is no local remote to read, so its identity simply *is*
@@ -83,7 +83,7 @@ roots you declared, one of which now lives on tenx. No implicit global scan.
   loudly (non-zero) if it is unreachable — they never half-act.
 
 ### 6. Scope boundary
-Inventory covers **only** the tenx bare-repo home(s) under `[server].root`. The DCN cloud
+Inventory covers **only** the tenx bare-repo home(s) under `[server].root`. The cloud
 `origin` is out of scope for inventory and lifecycle actions; `status` may still display an
 existing `origin` column read-only as it does today, but `gr` neither enumerates nor
 reconciles cloud remotes in this increment.
@@ -95,7 +95,7 @@ reconciles cloud remotes in this increment.
 - `status` is no longer guaranteed local-only/offline-safe *by default*; the `--offline`
   flag and graceful degradation preserve the old fast path and keep a sleeping tenx from
   turning a status check into a failure.
-- The home-name-from-remote rule removes the `USCourts_setup ↔ omarchy-setup` foot-gun
+- The home-name-from-remote rule removes the `desktop-setup ↔ omarchy-setup` foot-gun
   without a hand-maintained mapping, at the cost of depending on the `data`/`data-lan`
   remote URLs being well-formed (they are, by ADR-0009 / `create`).
 - Adds a `[server]` config section and a per-home `git ls-remote` round-trip. For a handful

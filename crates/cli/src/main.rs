@@ -10,7 +10,7 @@ mod statusjson;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
-use git_redundancy_core::{BranchSync, SyncAction};
+use git_redundancy_core::{collapse_columns, BranchSync, ColumnCollapse, SyncAction};
 use git_redundancy_io::{config::Config, discovery::discover, git, server};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -56,6 +56,10 @@ struct StatusArgs {
     /// Limit the table to a single remote.
     #[arg(long)]
     remote: Option<String>,
+    /// Show each transport alias as its own column instead of collapsing a
+    /// same-server failover group (`data-lan`/`data`) into one (ADR-0021).
+    #[arg(long)]
+    by_remote: bool,
     /// Skip the server query; show the local view with lifecycle unknown (`?`).
     #[arg(long)]
     offline: bool,
@@ -150,6 +154,7 @@ fn main() -> Result<()> {
             repo: None,
             all_branches: false,
             remote: None,
+            by_remote: false,
             offline: false,
             json: false,
             no_color: false,
@@ -161,6 +166,7 @@ fn main() -> Result<()> {
             repo: None,
             all_branches: false,
             remote: None,
+            by_remote: false,
             offline: args.offline,
             json: false,
             no_color: false,
@@ -226,12 +232,17 @@ fn run_status(args: &StatusArgs) -> Result<()> {
     }
 
     let shown = shown_remotes(args, &cfg, &repos)?;
+    let plan = collapse_plan(&shown, &cfg, args);
 
     if survey.presences.is_empty() {
         if args.json {
+            let display = plan
+                .as_ref()
+                .map(|p| p.remotes.clone())
+                .unwrap_or_else(|| shown.clone());
             println!(
                 "{}",
-                serde_json::to_string_pretty(&statusjson::fleet(&shown, &[]))?
+                serde_json::to_string_pretty(&statusjson::fleet(&display, &[]))?
             );
         } else {
             println!("No repos found under the configured roots/repos.");
@@ -277,6 +288,10 @@ fn run_status(args: &StatusArgs) -> Result<()> {
             }
         }
     }
+
+    // Collapse same-server transport aliases into one column for display
+    // (ADR-0021); rows were computed per-alias above, so fetch/columns are intact.
+    let shown = apply_collapse(shown, &mut rows, plan.as_ref());
 
     if args.json {
         println!(
@@ -443,6 +458,7 @@ fn run_status_detail(
     };
 
     let shown = shown_remotes(args, cfg, repos)?;
+    let plan = collapse_plan(&shown, cfg, args);
     let color = color_enabled(args.no_color);
     let local = p.local_dir.as_ref().and_then(|d| path_by_dir.get(d));
     let mut local_branches: BTreeSet<String> = BTreeSet::new();
@@ -499,6 +515,10 @@ fn run_status_detail(
             }
         }
     }
+
+    // Collapse same-server transport aliases into one column (ADR-0021); cells
+    // were computed per-alias above.
+    let shown = apply_collapse(shown, &mut rows, plan.as_ref());
 
     let life = if home_known { p.lifecycle.label() } else { "?" };
     if args.json {
@@ -595,4 +615,39 @@ fn shown_remotes(
         }
     }
     Ok(set.into_iter().collect())
+}
+
+/// Whether (and how) to collapse same-server transport aliases into one status
+/// column (ADR-0021). On by default when the transport is an interchangeable
+/// failover group (`[transport].auto`); off under `--by-remote` or `--remote`
+/// (already a single column). `None` means render `shown` per-alias, unchanged.
+fn collapse_plan(shown: &[String], cfg: &Config, args: &StatusArgs) -> Option<ColumnCollapse> {
+    if args.by_remote
+        || args.remote.is_some()
+        || !cfg.transport.auto
+        || cfg.transport.order.is_empty()
+    {
+        return None;
+    }
+    let plan = collapse_columns(shown, &cfg.transport.order);
+    // Only worth applying when it actually merges two columns into fewer.
+    (plan.remotes.len() < shown.len()).then_some(plan)
+}
+
+/// Apply a collapse plan (if any) to the shown remotes and every row's cells,
+/// returning the display labels. With no plan, `shown` is returned unchanged.
+fn apply_collapse(
+    shown: Vec<String>,
+    rows: &mut [render::Row],
+    plan: Option<&ColumnCollapse>,
+) -> Vec<String> {
+    match plan {
+        None => shown,
+        Some(plan) => {
+            for row in rows.iter_mut() {
+                row.remote_cells = plan.fold(&row.remote_cells);
+            }
+            plan.remotes.clone()
+        }
+    }
 }

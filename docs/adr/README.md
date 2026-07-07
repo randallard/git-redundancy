@@ -67,3 +67,5 @@ where a decision touches a control we cite the 800-53 family inline.)
 | [0017](0017-onboard-guided-walk-and-ignore-list.md) | `gr onboard` — a guided per-repo walk, with a config `ignore` list | Accepted |
 | [0018](0018-repoint-backup-only-homes-into-current-topology.md) | `repoint` — bringing a backup-only home into the current primary→backup topology | Accepted |
 | [0019](0019-freshness-before-classification-status-push-fetch.md) | Freshness before classification — `status`/`push` fetch before computing ahead/behind | Accepted |
+| [0020](0020-onboard-attach-existing-primary-home.md) | `onboard` gains `attach` — a working copy whose primary home already exists | Accepted |
+| [0021](0021-collapse-same-server-transport-aliases-in-status.md) | Collapse same-server transport aliases into one status column | Accepted |

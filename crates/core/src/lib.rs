@@ -6,7 +6,9 @@
 #![forbid(unsafe_code)]
 
 pub mod classify;
+pub mod collapse;
 pub mod model;
+pub mod onboard;
 pub mod presence;
 pub mod status;
 pub mod sync;
@@ -17,7 +19,9 @@ pub mod timefmt;
 mod proofs;
 
 pub use classify::BranchSync;
+pub use collapse::{collapse_columns, most_backed_up, ColumnCollapse};
 pub use model::{AheadBehind, WorkingTree};
+pub use onboard::{classify_onboard, OnboardAction};
 pub use presence::{home_name_from_url, join_presences, Lifecycle, LocalRepo, RepoPresence};
 pub use status::parse_porcelain_v2_z;
 pub use sync::SyncAction;

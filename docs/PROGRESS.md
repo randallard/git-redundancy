@@ -42,7 +42,12 @@ gate). **Open items before this increment is truly "done":**
   bug ADR-0019 fixes: `status` now **fetches before computing the columns**, so both aliases read
   truthfully (and `push` fetches before classifying — the dangerous case where a repointed remote
   read a false `up-to-date`). (Observed 2026-06-22 backing up `proj_local_mods`: pushed via
-  `data-lan` → `ok`, but `data` showed `↑1` until fetched.)
+  `data-lan` → `ok`, but `data` showed `↑1` until fetched.) **Follow-up done —
+  [ADR-0021](adr/0021-collapse-same-server-transport-aliases-in-status.md):** ADR-0019 made the two
+  columns *truthful*; ADR-0021 collapses them into **one** `data` column by default (the same-server
+  failover group), so the visual doubling is gone too. `--by-remote` expands back to per-alias
+  columns for transport diagnostics. Pure fold in `core/collapse.rs` (`most_backed_up`: `ok` beats a
+  stale `↑n`), applied at display time; verified against the live config offline.
 
 **Decisions locked (see ADRs):** Rust CLI ([0001](adr/0001-use-rust-for-the-cli.md)) ·
 functional core / imperative shell ([0002](adr/0002-functional-core-imperative-shell.md)) ·

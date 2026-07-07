@@ -6,7 +6,7 @@
 use crate::{CloneArgs, CreateArgs, OnboardArgs, RepointArgs, SyncArgs};
 use anyhow::{Context, Result};
 use git_redundancy_core::presence::Lifecycle;
-use git_redundancy_core::{BranchSync, SyncAction};
+use git_redundancy_core::{classify_onboard, BranchSync, OnboardAction, SyncAction};
 use git_redundancy_io::{config::Config, discovery::discover, git, server, Audit};
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::Write;
@@ -96,64 +96,7 @@ fn create_home(
     // Match the home's default branch to what we push (the empty-looking-bare gotcha).
     let _ = server::set_head(alias, &root, name, &branch)?;
 
-    // ADR-0016: provision the full fleet topology so onboarding yields *redundancy*,
-    // not just a primary home. Install the primary's replication hook and create +
-    // harden the backup home — both before the push, so the push mirrors immediately.
-    // gr provisions; the primary→backup mirror itself stays the controller's job.
-    if cfg.backup_enabled() {
-        let hook = server::install_hook(
-            alias,
-            &root,
-            name,
-            "post-receive",
-            server::POST_RECEIVE_HOOK,
-        )?;
-        if !hook.success {
-            anyhow::bail!(
-                "created the primary home but failed to install its post-receive hook: {}",
-                first_line(&hook.stderr)
-            );
-        }
-        println!("  installed post-receive hook on {alias}");
-
-        let bk_alias = server::pick_backup_alias(cfg)?;
-        let bk_root = cfg.backup.root.clone();
-        if !server::home_exists(&bk_alias, &bk_root, name)? {
-            let bk = server::init_bare(&bk_alias, &bk_root, name)?;
-            if !bk.success {
-                anyhow::bail!(
-                    "created the primary home but failed to create the backup home on {bk_alias}: {}",
-                    first_line(&bk.stderr)
-                );
-            }
-            let _ = server::set_head(&bk_alias, &bk_root, name, &branch)?;
-        }
-        let hard = server::harden_home(&bk_alias, &bk_root, name)?;
-        if !hard.success {
-            anyhow::bail!(
-                "backup home exists but could not be hardened on {bk_alias}: {}",
-                first_line(&hard.stderr)
-            );
-        }
-        let pre = server::install_hook(
-            &bk_alias,
-            &bk_root,
-            name,
-            "pre-receive",
-            server::PRE_RECEIVE_HOOK,
-        )?;
-        if !pre.success {
-            anyhow::bail!(
-                "backup home exists but its pre-receive guard failed to install on {bk_alias}: {}",
-                first_line(&pre.stderr)
-            );
-        }
-        println!("  backup home ready + hardened on {bk_alias}");
-    } else {
-        println!(
-            "  ⚠ no [backup] configured — this repo will live on the primary only, NOT redundant"
-        );
-    }
+    ensure_topology(cfg, alias, &root, name, &branch)?;
 
     // Wire data / data-lan per ADR-0009, replacing any stale URL.
     for (remote, url) in server::remote_wiring(cfg, repos, &root, name, alias) {
@@ -191,6 +134,130 @@ fn create_home(
     Ok(CreateOutcome { failed })
 }
 
+/// Ensure the ADR-0016 replication topology around an existing-or-just-created
+/// primary home: the primary's `post-receive` mirror hook, plus a present +
+/// hardened backup home with its ff-only `pre-receive` guard. Idempotent — every
+/// step overwrites or is guarded by `home_exists`, so it is safe to run whether
+/// the primary was created just now (`create`) or already existed (`attach`).
+/// With no `[backup]` configured it prints the not-redundant warning and returns.
+fn ensure_topology(cfg: &Config, alias: &str, root: &Path, name: &str, branch: &str) -> Result<()> {
+    if !cfg.backup_enabled() {
+        println!(
+            "  ⚠ no [backup] configured — this repo will live on the primary only, NOT redundant"
+        );
+        return Ok(());
+    }
+
+    let hook = server::install_hook(alias, root, name, "post-receive", server::POST_RECEIVE_HOOK)?;
+    if !hook.success {
+        anyhow::bail!(
+            "primary home ready but failed to install its post-receive hook: {}",
+            first_line(&hook.stderr)
+        );
+    }
+    println!("  installed post-receive hook on {alias}");
+
+    let bk_alias = server::pick_backup_alias(cfg)?;
+    let bk_root = cfg.backup.root.clone();
+    if !server::home_exists(&bk_alias, &bk_root, name)? {
+        let bk = server::init_bare(&bk_alias, &bk_root, name)?;
+        if !bk.success {
+            anyhow::bail!(
+                "primary home ready but failed to create the backup home on {bk_alias}: {}",
+                first_line(&bk.stderr)
+            );
+        }
+        let _ = server::set_head(&bk_alias, &bk_root, name, branch)?;
+    }
+    let hard = server::harden_home(&bk_alias, &bk_root, name)?;
+    if !hard.success {
+        anyhow::bail!(
+            "backup home exists but could not be hardened on {bk_alias}: {}",
+            first_line(&hard.stderr)
+        );
+    }
+    let pre = server::install_hook(
+        &bk_alias,
+        &bk_root,
+        name,
+        "pre-receive",
+        server::PRE_RECEIVE_HOOK,
+    )?;
+    if !pre.success {
+        anyhow::bail!(
+            "backup home exists but its pre-receive guard failed to install on {bk_alias}: {}",
+            first_line(&pre.stderr)
+        );
+    }
+    println!("  backup home ready + hardened on {bk_alias}");
+    Ok(())
+}
+
+/// `gr onboard`'s **attach** action (ADR-0020): the primary home already exists,
+/// the working copy just was never wired to it (no `data` remote). Wire the local
+/// transport remotes at the existing primary, then reconcile both ways with the
+/// same easy-sync machinery `gr sync` uses — push ahead, fast-forward behind,
+/// report diverged, never force. No new primary home is created (that's the whole
+/// point: `create` would refuse "already exists"; `repoint` has no missing primary
+/// to provision). Shared shape with `create_home`, minus the primary provisioning.
+fn attach_repo(
+    cfg: &Config,
+    repo: &Path,
+    name: &str,
+    repos: &[PathBuf],
+    alias: &str,
+    backup_present: bool,
+    audit: &Audit,
+) -> Result<CreateOutcome> {
+    let root = cfg.server.root.clone();
+    println!(
+        "attaching `{name}` to the existing primary home {}/{name}.git on {alias} …",
+        root.display()
+    );
+
+    // A live-fleet primary home already replicates (its backup is present), so
+    // don't re-provision the whole topology per repo. Only when the backup is
+    // *missing* do we complete it — keeping onboard's "redundant or not at all"
+    // promise (ADR-0017) without needless SSH work on a healthy fleet.
+    if cfg.backup_enabled() && !backup_present {
+        let branch = git::current_branch(repo)?
+            .filter(|b| !b.is_empty())
+            .context("not on a branch (detached HEAD) — checkout a branch before onboarding")?;
+        ensure_topology(cfg, alias, &root, name, &branch)?;
+    } else if !cfg.backup_enabled() {
+        println!("  ⚠ no [backup] configured — primary only, NOT redundant");
+    }
+
+    // Wire data / data-lan at the primary, refreshing tracking refs (ADR-0009/0019).
+    for (remote, url) in server::remote_wiring(cfg, repos, &root, name, alias) {
+        wire_and_refresh(repo, &remote, &url)?;
+        println!("  remote {remote} → {url}");
+    }
+
+    // Reconcile both ways through the wired remotes — the same safe easy-sync as
+    // `gr sync` (push ahead / ff-pull behind / report diverged), over all branches.
+    let order = transport_order(cfg);
+    let sync_args = SyncArgs {
+        all_branches: true,
+        interactive: false,
+        dry_run: false,
+        repos: Vec::new(),
+    };
+    let mut t = Tally::default();
+    sync_repo(repo, &order, &sync_args, audit, &mut t)?;
+
+    let _ = audit.record(name, "-", alias, "attached", "");
+    let topo = if cfg.backup_enabled() {
+        " — redundant (primary + backup)"
+    } else {
+        " — primary only (no [backup])"
+    };
+    println!("attached `{name}` → wired to primary {alias}{topo}");
+    Ok(CreateOutcome {
+        failed: t.failed > 0,
+    })
+}
+
 /// The first transport remote actually present on the repo (the one to push to).
 fn primary_remote(cfg: &Config, repo: &Path) -> Result<String> {
     let order = if cfg.transport.order.is_empty() {
@@ -207,15 +274,9 @@ fn primary_remote(cfg: &Config, repo: &Path) -> Result<String> {
 
 // ============================ gr onboard ====================================
 
-/// What a candidate needs to become redundant.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Onboard {
-    /// Local-only, no home anywhere → `create` provisions the full topology.
-    Create,
-    /// Local-only on the primary but a home already exists on the *backup* (the
-    /// original-7 sub-state) → needs `repoint` (ADR-0018), not a fresh create.
-    Repoint,
-}
+/// What a candidate needs to become redundant is the pure `OnboardAction`
+/// (`Create` · `Repoint` · `Attach`), decided by `classify_onboard` from where
+/// the home already lives (ADR-0020).
 
 #[derive(Default)]
 struct OnboardTally {
@@ -259,9 +320,20 @@ pub fn run_onboard(args: &OnboardArgs) -> Result<()> {
         .map(|b| b.homes.iter().map(String::as_str).collect())
         .unwrap_or_default();
 
-    // Candidates: local working copy present, no primary home yet, not ignored.
+    // Homes that exist on the *primary* — a `Linked`/`HomeOnly` presence both mean
+    // the primary home is present (ADR-0012). When one of these shares a name with a
+    // `LocalOnly` working copy that was never wired to it, that's the `Attach` state
+    // (ADR-0020): the primary home is already there, the local copy just isn't on it.
+    let primary_homes: BTreeSet<&str> = survey
+        .presences
+        .iter()
+        .filter(|p| matches!(p.lifecycle, Lifecycle::HomeOnly | Lifecycle::Linked))
+        .map(|p| p.home_name.as_str())
+        .collect();
+
+    // Candidates: local working copy present, not yet redundant, not ignored.
     // (linked = done; home-only = `clone`'s job; ignored = deliberately skipped.)
-    let mut candidates: Vec<(String, PathBuf, Onboard)> = Vec::new();
+    let mut candidates: Vec<(String, PathBuf, OnboardAction)> = Vec::new();
     for p in &survey.presences {
         if p.lifecycle != Lifecycle::LocalOnly {
             continue;
@@ -273,11 +345,10 @@ pub fn run_onboard(args: &OnboardArgs) -> Result<()> {
         let Some(repo) = path_by_dir.get(dir) else {
             continue;
         };
-        let kind = if backup_homes.contains(p.home_name.as_str()) {
-            Onboard::Repoint
-        } else {
-            Onboard::Create
-        };
+        let kind = classify_onboard(
+            primary_homes.contains(p.home_name.as_str()),
+            backup_homes.contains(p.home_name.as_str()),
+        );
         candidates.push((p.home_name.clone(), repo.clone(), kind));
     }
 
@@ -311,9 +382,14 @@ pub fn run_onboard(args: &OnboardArgs) -> Result<()> {
         if args.dry_run {
             let plan = match (blocked, kind) {
                 (true, _) => format!("BLOCKED ({blocked_why}) — ignore or fix, then re-run"),
-                (false, Onboard::Create) => "would onboard → create -a (full topology)".into(),
-                (false, Onboard::Repoint) => {
+                (false, OnboardAction::Create) => {
+                    "would onboard → create -a (full topology)".into()
+                }
+                (false, OnboardAction::Repoint) => {
                     "would repoint → provision primary + re-role backup".into()
+                }
+                (false, OnboardAction::Attach) => {
+                    "would attach → wire local remotes to the existing primary + reconcile".into()
                 }
             };
             println!("  → {plan}\n");
@@ -325,9 +401,25 @@ pub fn run_onboard(args: &OnboardArgs) -> Result<()> {
         }
         match prompt_decision(blocked, *kind)? {
             Decision::Onboard => {
-                match create_home(&cfg, repo, name, true, &repos, &alias, &audit) {
+                // `y` covers both a fresh `create` and an `attach` to a home that
+                // already exists on the primary (ADR-0020) — same operator intent
+                // ("make this redundant"), the classifier picked the mechanism.
+                let result = if *kind == OnboardAction::Attach {
+                    attach_repo(
+                        &cfg,
+                        repo,
+                        name,
+                        &repos,
+                        &alias,
+                        backup_homes.contains(name.as_str()),
+                        &audit,
+                    )
+                } else {
+                    create_home(&cfg, repo, name, true, &repos, &alias, &audit)
+                };
+                match result {
                     Ok(o) if !o.failed => tally.onboarded += 1,
-                    Ok(_) => tally.failed += 1, // partial push; create_home already reported
+                    Ok(_) => tally.failed += 1, // partial push/reconcile already reported
                     Err(e) => {
                         eprintln!("  onboarding `{name}` failed: {e:#}");
                         tally.failed += 1;
@@ -414,12 +506,13 @@ enum Decision {
 }
 
 /// Prompt for one repo's decision, re-asking on invalid input. `y` (onboard) is
-/// offered only when the repo isn't blocked and needs a fresh create; `r`
-/// (repoint) replaces it for the backup-only sub-state.
-fn prompt_decision(blocked: bool, kind: Onboard) -> Result<Decision> {
+/// offered when the repo isn't blocked and needs a fresh `create` or an `attach`
+/// to an existing primary home (ADR-0020); `r` (repoint) replaces it for the
+/// backup-only sub-state.
+fn prompt_decision(blocked: bool, kind: OnboardAction) -> Result<Decision> {
     let action = if blocked {
         None
-    } else if kind == Onboard::Repoint {
+    } else if kind == OnboardAction::Repoint {
         Some("repoint (r)")
     } else {
         Some("onboard (y)")

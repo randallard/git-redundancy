@@ -2,7 +2,10 @@
 //! read already-present refs and the working tree. Fetch/push land later.
 
 use anyhow::{Context, Result};
-use git_redundancy_core::{parse_porcelain_v2_z, AheadBehind, BranchSync, WorkingTree};
+use git_redundancy_core::{
+    parse_porcelain_v2_z, parse_status_entries_v2_z, AheadBehind, BranchSync, StatusEntry,
+    WorkingTree,
+};
 use std::path::Path;
 use std::process::{Command, Output};
 
@@ -89,6 +92,12 @@ pub fn has_commits(repo: &Path) -> Result<bool> {
 pub fn working_tree(repo: &Path) -> Result<WorkingTree> {
     let out = git(repo, &["status", "--porcelain=v2", "-z"])?;
     Ok(parse_porcelain_v2_z(stdout_string(&out).as_str()))
+}
+
+/// Per-path working-tree entries, classified for the review loop (ADR-0022).
+pub fn status_entries(repo: &Path) -> Result<Vec<StatusEntry>> {
+    let out = git(repo, &["status", "--porcelain=v2", "-z"])?;
+    Ok(parse_status_entries_v2_z(stdout_string(&out).as_str()))
 }
 
 /// Ahead/behind of `branch` vs `remote/branch`, using the *local* remote-tracking
@@ -295,4 +304,52 @@ pub fn ff_merge_current(repo: &Path, remote: &str, branch: &str) -> Result<CmdOu
 pub fn ff_update_branch(repo: &Path, remote: &str, branch: &str) -> Result<CmdOutcome> {
     let refspec = format!("refs/remotes/{remote}/{branch}:refs/heads/{branch}");
     Ok(outcome(git(repo, &["fetch", ".", &refspec])?))
+}
+
+// --- interactive review: diff / stage / commit (ADR-0022) --------------------
+
+fn color_flag(color: bool) -> &'static str {
+    if color {
+        "--color=always"
+    } else {
+        "--color=never"
+    }
+}
+
+/// Unstaged delta on a tracked file (`git diff -- <path>`) — plain `git diff`
+/// always exits 0 (differences aren't a failure), so `out.status` is not checked.
+pub fn diff_unstaged(repo: &Path, path: &str, color: bool) -> Result<String> {
+    let out = git(repo, &["diff", color_flag(color), "--", path])?;
+    Ok(stdout_string(&out))
+}
+
+/// Whole-file "diff" of an untracked file against nothing (`git diff --no-index
+/// -- /dev/null <path>`), so a brand-new file previews the same way a tracked
+/// modification does. `--no-index` exits 1 when it finds differences (the
+/// expected case here) and only a genuine spawn failure surfaces as `Err`, so
+/// `out.status` is deliberately not checked.
+pub fn diff_untracked(repo: &Path, path: &str, color: bool) -> Result<String> {
+    let out = git(
+        repo,
+        &[
+            "diff",
+            "--no-index",
+            color_flag(color),
+            "--",
+            "/dev/null",
+            path,
+        ],
+    )?;
+    Ok(stdout_string(&out))
+}
+
+/// Stage exactly one path (`git add -- <path>`).
+pub fn add_file(repo: &Path, path: &str) -> Result<CmdOutcome> {
+    Ok(outcome(git(repo, &["add", "--", path])?))
+}
+
+/// Commit whatever is currently staged with `message`. Hooks run as normal — no
+/// `--no-verify` (ADR-0022 is an assist loop, not a bypass).
+pub fn commit(repo: &Path, message: &str) -> Result<CmdOutcome> {
+    Ok(outcome(git(repo, &["commit", "-m", message])?))
 }

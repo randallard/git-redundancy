@@ -11,8 +11,8 @@ It is deliberately conservative: it **never auto-commits, never force-pushes, an
 touches a diverged branch**. It backs up what's safe and tells you loudly about the rest.
 
 > Status: early (`0.0.0`), but the core works and is well-tested. `gr status`, `gr push`, the
-> `create` / `clone` / `sync` lifecycle commands, the `onboard` guided walk, and `repoint` are
-> implemented; see [Status](#status).
+> `create` / `clone` / `sync` lifecycle commands, the `onboard` guided walk, `repoint`, and bare
+> `gr`'s interactive stage-and-commit review are implemented; see [Status](#status).
 
 ## Why
 
@@ -40,6 +40,9 @@ without clobbering anything. That's `gr`.
 - **Safe by construction** — only *fast-forward* / *new-branch* pushes and clean
   fast-forward pulls; **never auto-commits, force-pushes, or auto-merges**. Diverged/behind
   are skipped and reported; dirty trees are surfaced but never block backing up committed work.
+- **Interactive review for dirty repos** — bare `gr` offers to cycle through them, showing a
+  diff per changed/untracked file and prompting to stage it (or open it in `$EDITOR` first),
+  then a commit message. Every add and commit is still one the operator explicitly asked for.
 - **Transport failover** — treats configured remotes as interchangeable paths to the same
   server (e.g. LAN first, Tailscale fallback) and acts once, via the first that works.
 - **FIPS-enforced SSH** (optional, recommended) — pin the transport to FIPS-approved
@@ -162,6 +165,42 @@ infra-notes  [linked]
 │   wip  │ · │ · │ · │ ·  │ new      │ new  │ push (new) │
 ╰────────┴───┴───┴───┴────┴──────────┴──────┴────────────╯
 ```
+
+### `gr` (bare — the default command)
+
+Bare `gr` is `gr status`, plus — only when something's dirty — an offer to stage and commit it
+right there ([ADR-0022](docs/adr/0022-default-command-interactive-stage-and-commit-review.md)).
+`gr status`/`gr homes`/`--json` stay pure, scriptable, read-only; this tail is bare-`gr`-only:
+
+```console
+$ gr
+╭─────────────┬────────┬────────┬───┬───┬───┬────┬──────┬───╮
+│ Repo        │ Life   │ Branch │ S │ U │ ? │ Cf │ data │ ⚠ │
+├─────────────┼────────┼────────┼───┼───┼───┼────┼──────┼───┤
+│ infra-notes │ linked │ * main │ · │ 1 │ 1 │ ·  │ ok   │   │
+╰─────────────┴────────┴────────┴───┴───┴───┴────┴──────┴───╯
+
+1 repo(s) have uncommitted work.
+[Enter] quit  ·  s) stage & review › s
+
+infra-notes (main) — 1 unstaged, 1 untracked
+diff --git a/notes.md b/notes.md
+...
+  stage notes.md? [y/N/e] y
+diff --git a/todo.txt b/todo.txt
+...
+  stage todo.txt? [y/N/e] y
+  commit message (empty to skip): tidy up notes
+  committed infra-notes main
+
+1 repo(s) reviewed. Run `gr push` or `gr sync` to back up anything you committed.
+```
+
+Per file: `y` stages it whole (no hunk-level staging — that's `git add -p`'s job), `e` opens
+`$EDITOR` on it and re-shows the diff, anything else (including Enter) leaves it unstaged. A
+merge conflict is reported and never touched. An empty commit message leaves whatever got
+staged in the index rather than committing it. Nothing is pushed as part of this — that's a
+separate, deliberate `gr push`/`gr sync` afterward.
 
 ### `gr push`
 
@@ -293,7 +332,9 @@ SSH transport — which is where the optional FIPS enforcement lives.
 
 Implemented and tested: `gr status` (home-aware, with a per-repo detail view and `--json`),
 `gr push`, the `create` / `clone` / `sync` lifecycle commands, the `gr onboard` guided walk,
-and `gr repoint` — all with transport failover and audit logging. `create` provisions the
+`gr repoint`, and bare `gr`'s interactive stage-and-commit review (ADR-0022) for dirty repos —
+all with transport failover and audit logging (the review loop itself isn't audited: it's local
+staging/committing, not a fleet-mutating action). `create` provisions the
 **full fleet topology** when a `[backup]` is set (ADR-0016): primary home + `post-receive` hook
 + hardened backup home, redundant from one command. `onboard` (ADR-0017) walks the un-redundant
 repos y/n/s/q with a config `ignore` list, and `repoint` (ADR-0018) brings a backup-only home

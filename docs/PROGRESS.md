@@ -12,7 +12,20 @@ end-to-end (with audit logging); not yet wired to the live tenx SSH aliases. Dec
 recorded as ADRs in [`docs/adr/`](adr/README.md) — read those for the authoritative *why*;
 this doc is the working overview. See [Implementation status](#implementation-status) below.
 
-**Where we are (2026-06-22).** The lifecycle surface is **feature-complete in code, pending live
+**Where we are (2026-07-08).** Bare `gr` (no subcommand) now offers an **interactive
+stage-and-commit review** for dirty repos — [ADR-0022](adr/0022-default-command-interactive-stage-and-commit-review.md).
+After the status table prints, if any repo's current branch is dirty, `gr` offers to cycle
+through them: a diff per changed/untracked file, `[y/N/e]` to stage it (or open `$EDITOR`
+first), then one commit-message prompt per repo. Still honors ADR-0006 — every `add`/`commit`
+is a direct answer to a prompt, nothing automatic; no auto-push tail (that's a separate
+`gr push`/`gr sync` afterward). New pure parser `parse_status_entries_v2_z` (`core/status.rs`,
+property-tested) + `io::git` helpers (`status_entries`/`diff_unstaged`/`diff_untracked`/
+`add_file`/`commit`) + `cli::review`. 90 tests pass (32 cli · 37 core · 19 io · 2 render),
+clippy/fmt clean. **Implemented, reviewed in a scratch repo (never the real fleet) — pending
+Ryan's local review, then a commit + follow-up journal entry** (the journal convention needs a
+real commit hash to reference).
+
+**Where we were (2026-06-22).** The lifecycle surface is **feature-complete in code, pending live
 verification**, for the two-box promise: **create / clone / sync / onboard / repoint**. Just
 landed and pushed — `gr onboard` (the ADR-0017 guided y/n/s/q walk + config `ignore` list) and
 `gr repoint` (ADR-0018, backup-only homes into the current topology behind a never-lose-history
@@ -108,6 +121,14 @@ Workspace: `crates/{core,io,cli}` (ADR-0002), `#![forbid(unsafe_code)]` througho
 - Gates green: build, `clippy -D warnings`, `cargo test` (**58 tests**: core 21 · io 15 ·
   cli 20 · render 2); coverage ~76% line (pure `core` 98–100%; the SSH-execution paths in
   `server`/lifecycle `create`/`clone` are live-verified, not hermetic).
+- **Bare-`gr` dirty-repo review ([ADR-0022](adr/0022-default-command-interactive-stage-and-commit-review.md)):**
+  pure `core::status::parse_status_entries_v2_z` (per-path `Untracked`/`Modified`/
+  `StagedOnly`/`Conflict` classification, sibling to the existing porcelain-v2 counter);
+  `io::git` gains `status_entries`/`diff_unstaged`/`diff_untracked`/`add_file`/`commit`;
+  `cli::review` is the walk itself, wired only into the no-subcommand default (`gr status`/
+  `--json` untouched, still pure and scriptable). Whole-file staging only (no `git add -p`
+  hunks); no auto-continue to push/sync. 6 new `assert_cmd` integration cases + property
+  tests on the parser. Reviewed against a scratch repo, not yet committed.
 
 **Not yet:** *mandatory* FIPS (tenx-side `sshd`/crypto-policy — the deferred tier); the
 operational item of keeping tenx awake/reachable at day's end; a future GUI (Tauri).
@@ -442,6 +463,24 @@ Owed before this is "done": **live round-trip** (the dogfooded fleet — confirm
 refs), then commit (a follow-up journal entry documents the work commits). Until then the
 [TROUBLESHOOTING](TROUBLESHOOTING.md) workaround (`git fetch <remote>` after a manual `set-url`)
 still applies to any machine on the old build.
+
+**⚠️ `gr create` run from a subdirectory names the home after the subdirectory but acts on the
+enclosing repo.** Hit live 2026-07-08 (dogfooding, the cycle-in onboarding): `run_create`
+(cli/lifecycle.rs) defaults the home name to **cwd's basename** and passes cwd as the repo
+path — but every git command runs `git -C <cwd>`, which resolves to the **enclosing repo**
+when cwd is a subdirectory. Running `gr create` from `~/Development/work/cycle-in/` (then a
+docs subdirectory of the `work` repo) therefore (a) created a home named `cycle-in` containing
+the **work** repo's history, (b) **rewired the work repo's `data`/`data-lan` remotes to the
+wrong home**, silently redirecting its future backups, and (c) the replication hook mirrored
+the mislabeled home to the backup server. The mis-wiring survived ~7 hours undetected;
+recovery required deleting the stray homes on both servers, `gr create` from the real repo's
+toplevel, and manually re-pointing work's remotes (+ `fetch --prune`, per the §7b lesson
+above). Full incident narrative: cycle-in's
+`docs/journal/2026-07-08-5-worklist-ui-gaps-and-stray-home-cleanup.md`. **Fix owed:**
+`run_create` should compare cwd against `git rev-parse --show-toplevel` and refuse (or at
+minimum warn + confirm) when they differ, and/or derive the default home name from the
+toplevel's basename instead of cwd's. Same hazard family as the "no nested repos under a
+root" convention — this is the tool-side door into it.
 
 ---
 

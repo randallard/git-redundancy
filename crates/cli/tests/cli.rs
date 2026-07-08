@@ -576,3 +576,155 @@ fn repoint_to_behind_home_still_pushes() {
     let work_head = fx.git(&fx.workrepo, &["rev-parse", "main"]);
     assert_eq!(new_head.trim(), work_head.trim());
 }
+
+// ==================== bare `gr`: dirty-repo review (ADR-0022) ====================
+//
+// The default (no-subcommand) invocation prints the status table, then — only
+// when a repo is dirty — offers to cycle through and stage/commit. `git commit`
+// needs an identity, which the fixture's global config deliberately blocks, so
+// these tests supply one via env on the specific `gr()` invocation that commits.
+
+#[test]
+fn default_command_has_no_review_prompt_when_clean() {
+    let fx = Fixture::new();
+    fx.gr()
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("uncommitted work").not());
+}
+
+#[test]
+fn default_command_offers_review_and_quits_on_empty_input() {
+    let fx = Fixture::new();
+    fx.write("a.txt", "one\ntwo\nedited\n");
+    fx.write("scratch.txt", "junk");
+
+    fx.gr()
+        .write_stdin("\n")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("1 repo(s) have uncommitted work"))
+        .stdout(predicate::str::contains("stage & review"));
+
+    // Quitting must leave the tree exactly as it was.
+    let status = fx.git(&fx.workrepo, &["status", "--porcelain"]);
+    assert!(status.contains("a.txt"));
+    assert!(status.contains("scratch.txt"));
+}
+
+#[test]
+fn default_command_stages_and_commits_tracked_and_untracked_files() {
+    let fx = Fixture::new();
+    fx.write("a.txt", "one\ntwo\nedited\n");
+    fx.write("scratch.txt", "junk");
+
+    fx.gr()
+        .env("EDITOR", "true")
+        .env("GIT_AUTHOR_NAME", "t")
+        .env("GIT_AUTHOR_EMAIL", "t@example.com")
+        .env("GIT_COMMITTER_NAME", "t")
+        .env("GIT_COMMITTER_EMAIL", "t@example.com")
+        .write_stdin("s\ny\ny\nstage everything\n")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("committed myrepo main"));
+
+    assert!(fx.git(&fx.workrepo, &["status", "--porcelain"]).is_empty());
+    let log = fx.git(&fx.workrepo, &["log", "--oneline"]);
+    assert!(log.contains("stage everything"));
+}
+
+#[test]
+fn default_command_empty_commit_message_leaves_files_staged() {
+    let fx = Fixture::new();
+    fx.write("a.txt", "one\ntwo\nedited\n");
+
+    fx.gr()
+        .env("EDITOR", "true")
+        .write_stdin("s\ny\n\n")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("left staged — not committed"));
+
+    let status = fx.git(&fx.workrepo, &["status", "--porcelain"]);
+    assert!(
+        status.starts_with("M "),
+        "expected a.txt staged: {status:?}"
+    );
+    // Exactly the fixture's one commit — nothing new landed.
+    let log = fx.git(&fx.workrepo, &["log", "--oneline"]);
+    assert_eq!(log.lines().count(), 1);
+}
+
+#[test]
+fn default_command_reports_conflict_without_staging_it() {
+    let fx = Fixture::new();
+    // Diverge two branches on the same file, then merge to leave a real conflict.
+    fx.git(&fx.workrepo, &["checkout", "-b", "other"]);
+    fx.write("a.txt", "one\ntwo\nother-branch\n");
+    fx.commit_all("other edit");
+    fx.git(&fx.workrepo, &["checkout", "main"]);
+    fx.write("a.txt", "one\ntwo\nmain-branch\n");
+    fx.commit_all("main edit");
+    // Conflict expected — ignore the non-zero exit from `git merge`. Needs an
+    // identity even though it never commits: git checks upfront, before it
+    // knows the merge will conflict rather than fast-forward/auto-commit.
+    let _ = std::process::Command::new("git")
+        .current_dir(&fx.workrepo)
+        .env("HOME", &fx.home)
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_CONFIG_SYSTEM", "/dev/null")
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .args(["-c", "user.email=t@example.com", "-c", "user.name=t"])
+        .args(["merge", "other"])
+        .output();
+    let before = fx.git(&fx.workrepo, &["status", "--porcelain"]);
+    assert!(
+        before.starts_with("UU"),
+        "expected a merge conflict: {before:?}"
+    );
+
+    fx.gr()
+        .write_stdin("s\n")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "merge conflict — resolve manually",
+        ));
+
+    // Never staged/touched — still the same unmerged entry.
+    let after = fx.git(&fx.workrepo, &["status", "--porcelain"]);
+    assert_eq!(before, after);
+}
+
+#[test]
+fn default_command_walks_two_dirty_repos_in_order() {
+    let fx = Fixture::new();
+    let repo2 = fx.dev.join("zzrepo");
+    fx.git(&fx.root, &["init", repo2.to_str().unwrap()]);
+    std::fs::write(repo2.join("b.txt"), "hello\n").unwrap();
+    fx.git(&repo2, &["add", "b.txt"]);
+    fx.git(&repo2, &["commit", "-m", "c1"]);
+    std::fs::write(repo2.join("b.txt"), "hello\nworld\n").unwrap();
+
+    fx.write("a.txt", "one\ntwo\nedited\n");
+
+    fx.gr()
+        .env("EDITOR", "true")
+        .env("GIT_AUTHOR_NAME", "t")
+        .env("GIT_AUTHOR_EMAIL", "t@example.com")
+        .env("GIT_COMMITTER_NAME", "t")
+        .env("GIT_COMMITTER_EMAIL", "t@example.com")
+        // top-level "s", then myrepo's a.txt (y + msg), then zzrepo's b.txt (y + msg)
+        .write_stdin("s\ny\nmyrepo commit\ny\nzzrepo commit\n")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("2 repo(s) have uncommitted work"))
+        .stdout(predicate::str::contains("2 repo(s) reviewed"));
+
+    assert!(fx.git(&fx.workrepo, &["status", "--porcelain"]).is_empty());
+    assert!(fx.git(&repo2, &["status", "--porcelain"]).is_empty());
+    assert!(fx
+        .git(&repo2, &["log", "--oneline"])
+        .contains("zzrepo commit"));
+}

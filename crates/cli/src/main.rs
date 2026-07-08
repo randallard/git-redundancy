@@ -6,6 +6,7 @@
 mod lifecycle;
 mod push;
 mod render;
+mod review;
 mod statusjson;
 
 use anyhow::Result;
@@ -149,16 +150,21 @@ pub struct SyncArgs {
 fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
-        // Default command (no subcommand) is `status`.
-        None => run_status(&StatusArgs {
-            repo: None,
-            all_branches: false,
-            remote: None,
-            by_remote: false,
-            offline: false,
-            json: false,
-            no_color: false,
-        }),
+        // Default command (no subcommand) is `status`, followed by an offer to
+        // stage/commit any dirty repos it found (ADR-0022). `gr status` itself
+        // (explicit) stays the pure, scriptable, read-only view.
+        None => {
+            run_status(&StatusArgs {
+                repo: None,
+                all_branches: false,
+                remote: None,
+                by_remote: false,
+                offline: false,
+                json: false,
+                no_color: false,
+            })?;
+            review::maybe_prompt()
+        }
         Some(Command::Status(args)) => run_status(&args),
         Some(Command::Push(args)) => push::run_push(&args),
         // `homes` is a thin alias for the fleet `status` view (ADR-0014).
@@ -553,7 +559,7 @@ fn action_label(sync: BranchSync, action: SyncAction) -> String {
 
 /// Color is on for a TTY unless `--no-color` or `NO_COLOR` is set; `CLICOLOR_FORCE`
 /// forces it on (handy for piping into a pager).
-fn color_enabled(no_color: bool) -> bool {
+pub(crate) fn color_enabled(no_color: bool) -> bool {
     use std::io::IsTerminal;
     if no_color {
         return false;

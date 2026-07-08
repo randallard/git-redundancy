@@ -69,3 +69,4 @@ where a decision touches a control we cite the 800-53 family inline.)
 | [0019](0019-freshness-before-classification-status-push-fetch.md) | Freshness before classification — `status`/`push` fetch before computing ahead/behind | Accepted |
 | [0020](0020-onboard-attach-existing-primary-home.md) | `onboard` gains `attach` — a working copy whose primary home already exists | Accepted |
 | [0021](0021-collapse-same-server-transport-aliases-in-status.md) | Collapse same-server transport aliases into one status column | Accepted |
+| [0022](0022-default-command-interactive-stage-and-commit-review.md) | Bare `gr` offers an interactive stage-and-commit review for dirty repos | Accepted |

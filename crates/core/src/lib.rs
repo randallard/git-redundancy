@@ -23,6 +23,6 @@ pub use collapse::{collapse_columns, most_backed_up, ColumnCollapse};
 pub use model::{AheadBehind, WorkingTree};
 pub use onboard::{classify_onboard, OnboardAction};
 pub use presence::{home_name_from_url, join_presences, Lifecycle, LocalRepo, RepoPresence};
-pub use status::parse_porcelain_v2_z;
+pub use status::{parse_porcelain_v2_z, parse_status_entries_v2_z, EntryKind, StatusEntry};
 pub use sync::SyncAction;
 pub use timefmt::rfc3339_utc;

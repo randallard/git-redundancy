@@ -2,6 +2,8 @@
 - Status: Accepted
 - Date: 2026-06-17
 - Deciders: Ryan
+- Verified-by: `manual, live-verified 2026-06-17` (SETUP.md) — host aliases, mDNS resolution and the
+  pinned host key are machine config on the two boxes, not repo state.
 
 ## Context
 The git remotes pointed at raw addresses: `data-lan` → `ssh://…@192.168.1.54/…`, `data` →

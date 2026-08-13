@@ -2,6 +2,9 @@
 - Status: Accepted
 - Date: 2026-06-18
 - Deciders: Ryan
+- Verified-by: `cli tests:` `status_offline_shows_lifecycle_column_unknown`,
+  `status_flags_other_branches_needing_attention`, `status_repo_detail_shows_sync_action_column`,
+  `ignored_repo_shows_ignored_lifecycle_in_status`, `homes_is_an_alias_for_the_status_fleet_view`.
 
 ## Context
 ADR-0012 lets `gr` see both presences of a repo (local working copy, bare home on tenx) and

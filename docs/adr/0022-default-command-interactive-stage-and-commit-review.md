@@ -2,6 +2,13 @@
 - Status: Accepted
 - Date: 2026-07-08
 - Deciders: Ryan
+- Verified-by: `cli tests:` `default_command_offers_review_and_quits_on_empty_input`,
+  `default_command_stages_and_commits_tracked_and_untracked_files`,
+  `default_command_walks_two_dirty_repos_in_order`,
+  `default_command_reports_conflict_without_staging_it`,
+  `default_command_empty_commit_message_leaves_files_staged`,
+  `default_command_has_no_review_prompt_when_clean`; `parse_status_entries_v2_z` is
+  proptest-covered.
 
 ## Context
 `gr` already surfaces "this repo has unstaged/untracked work" — the `⚠ ... — NOT backed up

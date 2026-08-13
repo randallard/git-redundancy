@@ -2,6 +2,8 @@
 - Status: Accepted
 - Date: 2026-06-17
 - Deciders: Ryan
+- Verified-by: `ci: fast gates` — the workspace is Rust and `cargo build` / `clippy -D warnings` /
+  `cargo test --locked` gate every push; `#![forbid(unsafe_code)]` is present in all three crates.
 
 ## Context
 git-redundancy must be **memory-safe, testable, automatable, and "provable"** to a meaningful

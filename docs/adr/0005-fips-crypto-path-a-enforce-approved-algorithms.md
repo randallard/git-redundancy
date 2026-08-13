@@ -2,6 +2,9 @@
 - Status: Accepted
 - Date: 2026-06-17
 - Deciders: Ryan
+- Verified-by: `manual, live-verified 2026-06-17` — FIPS-approved algorithms are enforced in the SSH
+  host alias on both boxes (SETUP.md), not in repo state, and fail-closed was confirmed by hand.
+  No CI check is possible: the runners are not the fleet.
 
 ## Context
 The decision was "require FIPS-validated crypto now." Investigation on this machine

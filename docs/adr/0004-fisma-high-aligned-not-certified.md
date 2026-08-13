@@ -2,6 +2,10 @@
 - Status: Accepted
 - Date: 2026-06-17
 - Deciders: Ryan
+- Verified-by: `ci: fast gates` (cargo-deny — licenses/bans/sources/advisories) + `ci: supply chain`
+  (`cargo vet --locked`, CycloneDX SBOM) + `clippy --locked` / `test --locked` for the CM
+  "pinned `Cargo.lock`" claim. **That lockfile claim was unverified from 2026-06-17 until
+  `59cebc0` (2026-08-13)** — the two-month hole that motivated this field existing at all.
 
 ## Context
 The goal was stated as "FISMA High if possible." FISMA categorizes *information systems*

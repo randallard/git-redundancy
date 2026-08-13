@@ -2,6 +2,10 @@
 - Status: Accepted
 - Date: 2026-06-17
 - Deciders: Ryan
+- Verified-by: `ci: fast gates` only indirectly — `Cargo.lock` has **0** hits for `gix`/`git2`/`libgit2`
+  today. **Not enforced:** `deny.toml` has no `[bans] deny` entry for them, so re-introducing
+  libgit2 would pass CI green. Candidate fix: add them to `[bans] deny`. *(Gap surfaced by the
+  2026-08-13 backfill.)*
 - Supersedes: [ADR-0003](0003-git-backend-hybrid.md)
 
 ## Context

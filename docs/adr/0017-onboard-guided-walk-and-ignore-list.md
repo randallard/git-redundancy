@@ -2,6 +2,10 @@
 - Status: Accepted
 - Date: 2026-06-22
 - Deciders: Ryan
+- Verified-by: `cli tests:` `onboard_without_server_config_fails_with_guidance`,
+  `onboard_with_unreachable_server_fails_loudly`, `ignored_repo_shows_ignored_lifecycle_in_status`.
+  **Not live-verified** — the walk itself (candidate detection, the `ignore` write, the prompt
+  loop) has never had a live round-trip; only the guard paths are covered.
 
 ## Context
 ADR-0016 made a single `gr create` yield real redundancy: primary home + replication hook +

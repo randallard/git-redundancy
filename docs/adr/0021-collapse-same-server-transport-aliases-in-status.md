@@ -2,6 +2,9 @@
 - Status: Accepted
 - Date: 2026-07-04
 - Deciders: Ryan
+- Verified-by: `core::collapse` unit tests (7, incl. the headline `ok`-beats-stale-`↑1` case and "a genuine
+  gap still surfaces when all aliases agree") + `manual` verification against the live config with
+  `--offline` — the collapse is display-only, so offline fully exercises it.
 
 ## Context
 `gr status` renders one sync column **per remote** in the shown set. On the real fleet the shown

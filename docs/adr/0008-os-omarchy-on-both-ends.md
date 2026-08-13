@@ -2,6 +2,8 @@
 - Status: Accepted
 - Date: 2026-06-17
 - Deciders: Ryan
+- Verified-by: `none` — an environmental assumption about the two boxes, not repo state. CI runners are
+  `ubuntu-latest` and cannot check it.
 
 ## Context
 Both ends of this system run **Omarchy** — the laptop (`dev-laptop`, the working-copy

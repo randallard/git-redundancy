@@ -2,6 +2,9 @@
 - Status: Accepted
 - Date: 2026-06-19
 - Deciders: Ryan
+- Verified-by: `none` — no hermetic test covers the `Bkp` column; it rests on live use against the tenx
+  primary+backup pair. A hermetic case needs a second fake server. *(Gap surfaced by the
+  2026-08-13 backfill.)*
 
 ## Context
 The fleet now has two home servers: a **primary** (where clients push) and a **backup** that the

@@ -2,6 +2,9 @@
 - Status: Accepted
 - Date: 2026-06-17
 - Deciders: Ryan
+- Verified-by: `none` — this is the process ADR itself. The CI linter that would enforce a non-empty
+  `Verified-by` on every Accepted ADR is deliberately deferred until the convention has survived
+  a few ADRs (tracked in PROGRESS.md), so today the field is honoured by hand.
 
 ## Context
 git-redundancy involves a chain of non-obvious architecture and security choices (language,

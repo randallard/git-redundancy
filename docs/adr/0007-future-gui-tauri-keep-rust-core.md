@@ -2,6 +2,8 @@
 - Status: Proposed (future phase)
 - Date: 2026-06-17
 - Deciders: Ryan
+- Verified-by: `none` — Status is `Proposed` and this is a future-phase decision; there is nothing to
+  verify until a GUI exists.
 
 ## Context
 The stated future goal is a GUI that is "provable, testable, FISMA High, TypeScript."

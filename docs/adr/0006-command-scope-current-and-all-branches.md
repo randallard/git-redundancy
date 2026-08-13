@@ -2,6 +2,12 @@
 - Status: Accepted
 - Date: 2026-06-17
 - Deciders: Ryan
+- Verified-by: `cli tests:` `push_fast_forwards_new_commit`, `push_skips_diverged_conflict_without_failing`,
+  `dirty_tree_is_warned_and_not_pushed` (never auto-commit),
+  `status_dirty_only_hides_clean_repos_and_shows_dirty_ones` +
+  `status_dirty_only_counts_untracked_files_as_dirty` (`--dirty-only`, built 2026-08-13).
+  `kani: easy_push_implies_not_behind` proves the never-force-a-diverged-branch invariant for all
+  `u32` ahead/behind.
 
 ## Context
 Two needs: a *focused* end-of-day view (just the branch I'm on, per repo) and a *complete*

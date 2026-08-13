@@ -2,6 +2,10 @@
 - Status: Accepted
 - Date: 2026-06-22
 - Deciders: Ryan
+- Verified-by: `cli tests:` `repoint_without_backup_is_refused`,
+  `repoint_without_server_config_fails_with_guidance`, `repoint_to_behind_home_still_pushes`.
+  **Not live-verified** — the consistency gate and the five-step flip are unproven against the
+  real fleet.
 
 ## Context
 ADR-0017 added the `gr onboard` walk and listed `r` (repoint) as an inline option for the

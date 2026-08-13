@@ -2,6 +2,14 @@
 - Status: Accepted
 - Date: 2026-06-18
 - Deciders: Ryan
+- Verified-by: `cli tests:` `sync_pushes_committed_work`,
+  `sync_fast_forwards_when_home_is_ahead_and_tree_clean`,
+  `sync_blocks_fast_forward_when_tree_is_dirty`, `sync_dry_run_pushes_nothing`,
+  `sync_with_nonmatching_only_filter_matches_nothing`,
+  `clone_target_outside_roots_is_refused_with_guidance`,
+  `create_without_server_config_fails_with_guidance`; the `core::sync` planner's
+  ff-pull-implies-clean invariant is proptest-checked. Plus `manual, live-verified`
+  create→sync→clone round-trip against tenx.
 
 ## Context
 ADR-0012 gives `gr` a two-sided picture: every repo is a *name* with up to two presences

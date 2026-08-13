@@ -2,6 +2,10 @@
 - Status: Accepted
 - Date: 2026-06-18
 - Deciders: Ryan
+- Verified-by: `io::inventory` unit tests (6) + `core::presence` join tests incl.
+  `no_home_remote_is_local_only_even_if_dir_matches_a_home`, plus
+  `manual, live-verified against tenx 2026-06-18` (`omarchy-setup`↔`desktop-setup` resolves
+  linked; an uncloned `myproject` shows home-only).
 
 ## Context
 Through ADR-0011, `gr` only knows about **local** working copies: discovery scans the

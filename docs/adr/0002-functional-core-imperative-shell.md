@@ -2,6 +2,10 @@
 - Status: Accepted
 - Date: 2026-06-17
 - Deciders: Ryan
+- Verified-by: `crates/core/Cargo.toml` has an **empty `[dependencies]`** list — the pure core is
+  structurally incapable of IO — plus `ci: kani proofs` and ADR-0023 coverage gate 1 (core ≥95%),
+  both of which are only possible because it is IO-free. **Not enforced:** nothing fails if a
+  dependency is later added to `core`.
 
 ## Context
 "Provable + testable" is only achievable if the logic worth proving is isolated from IO.

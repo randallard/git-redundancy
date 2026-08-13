@@ -2,6 +2,8 @@
 - Status: Accepted
 - Date: 2026-06-30
 - Deciders: Ryan
+- Verified-by: `none` — no hermetic test reaches `onboard`'s attach path; ADR-0017's onboard tests stop at
+  the guard paths. *(Gap surfaced by the 2026-08-13 backfill.)*
 
 ## Context
 `gr onboard` (ADR-0017) walks the un-redundant repos and, per repo, picks the mechanism that

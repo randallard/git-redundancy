@@ -2,6 +2,10 @@
 - Status: Accepted
 - Date: 2026-06-17
 - Deciders: Ryan
+- Verified-by: `ci: .github/workflows/ci.yml` itself — four jobs (fast gates, kani proofs, coverage gate,
+  supply chain) on every push/PR, each with a `timeout-minutes` ceiling. Last verified green:
+  run `31660947110` on `59cebc0`. *(Note: the workflow existed but had not actually run between
+  2026-06-22 and 2026-08-13 — a job that exists is not a job that runs.)*
 
 ## Context
 git-redundancy is run locally; there is **no cloud deploy**. So CI's job here is purely

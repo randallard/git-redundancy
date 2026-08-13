@@ -2,6 +2,8 @@
 - Status: Accepted
 - Date: 2026-06-21
 - Deciders: Ryan
+- Verified-by: `manual, live-verified` — onboarding `branching-video` confirmed both branches matched
+  primary↔backup. No hermetic test: the decision is about provisioning two SSH servers.
 
 ## Context
 ADR-0013 gave `gr create` the `local-only → linked` transition: `git init --bare` a home on the

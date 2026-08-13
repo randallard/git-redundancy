@@ -88,12 +88,48 @@ are 13–38s. Nothing can hang today (the Kani harnesses are loop-free integer l
 why no `#[kani::unwind]` bound exists), but the ceiling caps the blast radius the day a harness
 gains a loop or `llvm-cov` wedges.
 
-**Deliberately not done yet** (deferred by agreement, not forgotten): the CI linter that
-enforces `Verified-by` on every Accepted ADR and reconciles the hand-maintained index Status
-column — held until the convention has survived a few ADRs, so it doesn't become a gate
-that gets bypassed. And the **backfill** of `Verified-by:` across ADRs 0000–0022, which is
-the actual audit and will surface the next ADR-0004-shaped hole. Also open from the audit:
-decide `--dirty-only` (build it, or supersede that slice of ADR-0006).
+**ADR honesty flow — completed 2026-08-13 (uncommitted).** All four follow-ups landed:
+
+1. **[ADR-0023](adr/0023-coverage-gate-tiered-by-testability.md) accepted**, and the tiered
+   coverage job landed: core ≥95% (**96.37%**), testable surface ≥80% with the network shell
+   excluded (**84.37%**), whole workspace reported but ungated (**65.51%**). The
+   `::warning::` and the "COVERAGE DEBT / STOPGAP" framing are retired — the bar on testable
+   code is now *higher* than the 70% that predated the stopgap.
+2. **`Verified-by:` backfilled across all 23 prior ADRs.** Every one of the 24 now names what
+   would fail if its decision stopped being true. **Nine carry an honest `none` / "Not
+   enforced" / "Not live-verified"** — that is the audit's actual product, see the gaps below.
+3. **`--dirty-only` built** (ADR-0006's last unimplemented slice, accepted 2026-06-17 and
+   absent ever since). `gr status --dirty-only` filters the fleet table to repos with a dirty
+   working tree; checked *before* `refresh_columns`, so filtered-out repos cost no network
+   round-trip. Home-only rows are suppressed (no working tree ⇒ never dirty). Two new tests
+   (**92 total**, cli 32→34). Live: 90+ repos → 4.
+4. **Kani `--locked`: deliberately not added, and that is the finding.** The lockfile
+   invariant is *already* enforced repo-wide by `clippy --locked` + `test --locked` in the
+   fast-gates job — a stale lockfile turns the build red there before the Kani job's
+   resolution could matter. Adding it to the wrapper action would be redundant belt-and-braces
+   whose flag support can't be verified without a full local Kani/CBMC install. `cargo
+   cyclonedx` is settled separately: **it has no `--locked`/`--frozen`/`--offline` flag at
+   all** (installed it and checked).
+
+**Gaps the backfill surfaced** (each now written into the ADR that owns it, not just here):
+- **[ADR-0010](adr/0010-system-git-for-local-reads.md) is unenforced.** `Cargo.lock` has 0 hits
+  for `gix`/`git2`/`libgit2` today, but `deny.toml` has no `[bans] deny` entry — re-introducing
+  libgit2 would pass CI green. Cheapest real fix on this list.
+- **[ADR-0015](adr/0015-backup-server-presence-column.md) (`Bkp` column) and
+  [ADR-0020](adr/0020-onboard-attach-existing-primary-home.md) (onboard attach) have no
+  hermetic test at all** — both rest on live use only.
+- **[ADR-0017](adr/0017-onboard-guided-walk-and-ignore-list.md) /
+  [0018](adr/0018-repoint-backup-only-homes-into-current-topology.md) remain not
+  live-verified**; only their guard paths are covered. Unchanged from before, now stated in
+  the ADRs themselves.
+- **[ADR-0002](adr/0002-functional-core-imperative-shell.md) is structurally sound but
+  unenforced** — `crates/core/Cargo.toml` has an empty `[dependencies]`, so the core cannot do
+  IO today, but nothing fails if a dep is added later.
+
+**Still deferred** (by agreement, not forgotten): the **CI linter** that would enforce a
+non-empty `Verified-by` on every Accepted ADR and reconcile the hand-maintained index Status
+column — held until the convention survives a few ADRs, so it doesn't become a gate that gets
+bypassed on sight.
 
 **Where we were (2026-07-08).** Bare `gr` (no subcommand) now offers an **interactive
 stage-and-commit review** for dirty repos — [ADR-0022](adr/0022-default-command-interactive-stage-and-commit-review.md).

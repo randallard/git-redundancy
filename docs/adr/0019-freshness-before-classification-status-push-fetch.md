@@ -2,6 +2,9 @@
 - Status: Accepted
 - Date: 2026-06-22
 - Deciders: Ryan
+- Verified-by: `cli test: repoint_to_behind_home_still_pushes` — the regression for the dangerous
+  under-reporting case (a repointed remote reading a false `up-to-date`). **Live round-trip
+  against server refs still owed.**
 
 ## Context
 ADR-0012 built the home-aware status on a deliberately **network-free** ahead/behind computation:

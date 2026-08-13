@@ -2,6 +2,7 @@
 - Status: Superseded by [ADR-0010](0010-system-git-for-local-reads.md)
 - Date: 2026-06-17
 - Deciders: Ryan
+- Verified-by: `n/a` — superseded by [ADR-0010](0010-system-git-for-local-reads.md).
 
 > **Superseded:** the gix-for-local-reads part was reversed — system `git` is used for
 > reads too (see [ADR-0010](0010-system-git-for-local-reads.md)). The rest of this ADR's

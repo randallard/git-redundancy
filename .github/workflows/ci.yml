@@ -13,9 +13,13 @@ env:
 
 jobs:
   # Fast gates — run on every push/PR (ADR-0011). Seconds; the primary feedback loop.
+  # `timeout-minutes` on every job caps the blast radius of a hang. GitHub's
+  # default is 6 HOURS; observed warm runtimes here are 13-38s, so these ceilings
+  # are ~15-30x headroom and will only ever trip on a genuine wedge.
   gates:
     name: fast gates
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -42,6 +46,10 @@ jobs:
   proofs:
     name: kani proofs
     runs-on: ubuntu-latest
+    # Higher ceiling than the other jobs: a cold cache pays the Kani/CBMC bundle
+    # download. Solve time itself is trivial (integer decision logic, no loops,
+    # no unwind bounds needed) — 35s observed warm.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - name: cache Kani toolchain
@@ -68,6 +76,7 @@ jobs:
   coverage:
     name: coverage gate
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -86,6 +95,7 @@ jobs:
   supply-chain:
     name: supply chain
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable

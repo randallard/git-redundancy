@@ -21,11 +21,11 @@ the ADR-0006 `-a/--all-branches` scope flag was fully implemented on `push`/`sta
 all, so "push every easy branch" read as missing when it already shipped. No behavior change,
 no new flags, no default changed (`push` still defaults to the current branch): this is
 discoverability only, one attribute on the `Cli` derive in `cli/main.rs`. Gates green — fmt,
-clippy `-D warnings`, 90 tests (32 cli · 37 core · 19 io · 2 render). **Pending Ryan's local
-review, then commit + a follow-up journal entry** (the journal convention references a real
-commit hash).
+clippy `-D warnings`, 90 tests (32 cli · 37 core · 19 io · 2 render). **Committed in
+`e42e046`**; documented in
+[journal/2026-08-12](journal/2026-08-12-help-discoverability-locked-ci-and-adr-honesty.md).
 
-Also landed 2026-08-05: **CI now actually enforces the pinned lockfile.** `--locked` added to
+Also in `e42e046`: **CI now actually enforces the pinned lockfile.** `--locked` added to
 `clippy`, `test`, and `cargo llvm-cov` (`.github/workflows/ci.yml`); `cargo vet` already had
 it. Previously only `cargo vet` used it, so a `Cargo.lock` that no longer satisfied the
 manifest passed CI green — ADR-0004's CM row claims "pinned `Cargo.lock`" and **nothing
@@ -34,7 +34,7 @@ to README.md:64) silently resolving clap 4.6.5 over the pinned 4.6.1. `cargo fmt
 deliberately excluded — it rejects the flag and resolves nothing. Kani + `cargo-cyclonedx` run
 through wrapper actions and were left alone (untested with the flag) — **open item.**
 
-**ADR honesty flow (2026-08-05, started).** An audit of the log against the code found four
+**ADR honesty flow (started; in `e42e046`).** An audit of the log against the code found four
 distinct drift modes: an ADR promising something never built (ADR-0006's `--dirty-only` — zero
 hits in `crates/`), an ADR asserting a property nothing enforced (ADR-0004's pinned lockfile,
 above), a CI gate no ADR ever decided (the coverage floor), and code that moved before its ADR
@@ -48,6 +48,45 @@ above), a CI gate no ADR ever decided (the coverage floor), and code that moved 
   ungated (**65.51%**). Net effect is a *higher* bar than the 70% that predated the stopgap;
   the "COVERAGE DEBT" framing is resolved by it, not deferred again. **Awaiting Ryan's
   accept — the CI job still runs the old single 58% floor until then.**
+
+**⚠️ CI HAS NOT RUN SINCE 2026-06-22.** Found while checking the remotes for missed work. The
+last CI run was on `81c8af5`; `origin/main` is **5 commits behind** local — `230de1a`,
+`ae41e8f`, `473cf98`, `809a456`, `e42e046` have **never been through CI**. The home remotes
+(`data`/`data-lan`/`waed-7561`) are current because `gr` keeps them so, but CI lives on GitHub
+and `origin` is a separate, manual push. Consequence: ADR-0011's gates and ADR-0004's
+supply-chain job have been *described* but not *running* for ~7 weeks, and the 58% floor was
+tuned to a tree that predates `review.rs`. **The `--locked` and `flatten_help` changes are
+unexercised by real CI.** Push `main` to `origin` and read the result before layering the
+ADR-0023 tiers on top. *(Same disease as the rest of this entry: a control that exists in the
+record and not in reality.)*
+
+**First real CI run in 7 weeks: RED, and the dormancy is exactly why.** Run `31659943282` on
+`e42e046` — **kani ✅, coverage ✅, supply-chain ✅, fast gates ❌** on one step: `cargo-deny`.
+Cause: **RUSTSEC-2026-0190**, unsoundness in `anyhow::Error::downcast_mut()` (`< 1.0.103`),
+published **2026-06-25 — three days after the last CI run.** It has been failing since June and
+nothing said so, because nothing ran. Real exposure here was nil: we call `.context()` 8×
+but **never** `downcast_mut`, and the advisory needs both — an advisory tripping on a path we
+don't use is the gate working, not noise.
+
+Fixed (uncommitted): `cargo update -p anyhow` → **1.0.102 → 1.0.104**. This cascaded, as the
+`--locked` work predicted it would — `cargo vet --locked` then failed with `anyhow:1.0.104
+missing ["safe-to-deploy"]` because the exemption was version-pinned. Resolved with `cargo vet
+add-exemption anyhow 1.0.104 --criteria safe-to-deploy` + `cargo vet prune`, which collapsed to
+a **one-line** diff (`1.0.102` → `1.0.104`) with no collateral churn. **The lockfile change and
+the `supply-chain/config.toml` change must land in the same commit** — that coupling is now
+enforced by `--locked` rather than left to memory.
+
+Verified locally, every gate CI runs: `fmt` ok · `clippy --locked` clean · `test --locked` 90
+pass · `cargo deny check` → *advisories ok, bans ok, licenses ok, sources ok* · `cargo vet
+--locked` → *Vetting Succeeded* · `llvm-cov --locked` **65.51%** (floor 58). *(`cargo-vet` and
+`cargo-cyclonedx` were not installed locally — installed both rather than guess at their
+behavior.)*
+
+**Job timeouts added** (uncommitted): every CI job now has `timeout-minutes` — gates 10,
+coverage 15, supply-chain 10, kani 20. GitHub's default is **6 hours**; observed warm runtimes
+are 13–38s. Nothing can hang today (the Kani harnesses are loop-free integer logic, which is
+why no `#[kani::unwind]` bound exists), but the ceiling caps the blast radius the day a harness
+gains a loop or `llvm-cov` wedges.
 
 **Deliberately not done yet** (deferred by agreement, not forgotten): the CI linter that
 enforces `Verified-by` on every Accepted ADR and reconciles the hand-maintained index Status

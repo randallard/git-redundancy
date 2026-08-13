@@ -86,4 +86,4 @@ where a decision touches a control we cite the 800-53 family inline.)
 | [0020](0020-onboard-attach-existing-primary-home.md) | `onboard` gains `attach` — a working copy whose primary home already exists | Accepted |
 | [0021](0021-collapse-same-server-transport-aliases-in-status.md) | Collapse same-server transport aliases into one status column | Accepted |
 | [0022](0022-default-command-interactive-stage-and-commit-review.md) | Bare `gr` offers an interactive stage-and-commit review for dirty repos | Accepted |
-| [0023](0023-coverage-gate-tiered-by-testability.md) | Coverage gate tiered by testability, not one blended workspace number | Proposed |
+| [0023](0023-coverage-gate-tiered-by-testability.md) | Coverage gate tiered by testability, not one blended workspace number | Accepted |

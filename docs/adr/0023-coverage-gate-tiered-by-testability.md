@@ -1,6 +1,6 @@
 # ADR-0023: Coverage gate tiered by testability, not one blended workspace number
-- Status: Proposed
-- Date: 2026-08-05
+- Status: Accepted
+- Date: 2026-08-05 (accepted 2026-08-13)
 - Deciders: Ryan
 - Verified-by: `ci: coverage gate` (`.github/workflows/ci.yml`) — three `cargo llvm-cov
   --fail-under-lines` runs; this ADR's numbers are reproducible with the commands in
@@ -80,7 +80,8 @@ it gets stated plainly in the job comment instead of shouted on every build.
   coverage job asserts.
 
 ## Notes
-Status is `Proposed` — the substance is a recommendation, and Ryan is the Decider. Flip to
-`Accepted` (and land the CI edit) if the tiering and the 95/80 numbers are right. The
-measurements above are reproducible today; the CI job still runs the old single 58% floor
-until this is accepted.
+Written `Proposed` — the substance was a recommendation and Ryan is the Decider. **Accepted
+2026-08-13** and the three-gate coverage job landed with it. Acceptance deliberately waited on
+a green CI baseline (run `31660947110`, `59cebc0`): the first run in seven weeks failed on an
+unrelated `anyhow` advisory, and landing new gates before that was cleared would have made the
+tiers the obvious suspect for a failure they did not cause.

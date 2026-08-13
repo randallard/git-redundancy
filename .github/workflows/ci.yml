@@ -63,16 +63,15 @@ jobs:
           kani-version: '0.67.0'
           args: '-p git-redundancy-core'
 
-  # Coverage gate (ADR-0004) — line coverage must clear the floor.
+  # Coverage gate — TIERED BY TESTABILITY (ADR-0023, supersedes the ADR-0004-era
+  # single blended floor). The old 58% stopgap averaged a near-fully-covered pure
+  # core against SSH orchestration that cannot be tested hermetically, and so
+  # described neither. Measured instead, the *testable* surface was already at
+  # 84% — the debt was a denominator problem, not a quality problem.
   #
-  # ⚠️ COVERAGE DEBT (2026-06-22): the floor was TEMPORARILY lowered 70 → 58.
-  # onboard (ADR-0017) + repoint (ADR-0018) roughly doubled the SSH-orchestration
-  # code (cli/lifecycle.rs, io/server.rs, io/git.rs), none of it hermetically
-  # testable without a live server or an SSH stub — so the headline dropped to
-  # ~60%. This floor is a STOPGAP to keep CI honest-green, NOT a new standard.
-  # REVISIT: raise back toward 70 by excluding the network shell from the
-  # denominator or adding an SSH mock. Tracked in PROGRESS.md ("COVERAGE DEBT")
-  # and the README. The step below emits a loud ::warning:: on every run.
+  # The exclusion list in gate 2 is EXHAUSTIVE AND CLOSED: those three files by
+  # name, no globs. Adding a file to it requires a new ADR superseding 0023 —
+  # that is what stops the exclusion becoming a place to hide untested code.
   coverage:
     name: coverage gate
     runs-on: ubuntu-latest
@@ -86,10 +85,20 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-llvm-cov
-      - name: coverage (TEMP floor 58% — REVISIT, see COVERAGE DEBT)
+      # Gate 1 — the ADR-0002 pure core; also the proptest/Kani target. Should
+      # stay near-total. Measured 96.37% on 2026-08-05.
+      - name: coverage — pure core (floor 95%)
+        run: cargo llvm-cov --locked -p git-redundancy-core --fail-under-lines 95
+      # Gate 2 — the real quality gate: everything a hermetic test can reach.
+      # STRICTER than the 70% that predated the stopgap. Measured 84.42%.
+      - name: coverage — testable surface, network shell excluded (floor 80%)
         run: |
-          echo "::warning title=COVERAGE DEBT — revisit coverage requirements::Line-coverage floor TEMPORARILY lowered 70%->58% (headline ~60%). onboard/repoint added un-mockable SSH orchestration (cli/lifecycle.rs ~23%, io/server.rs ~50%, io/git.rs ~56%). This is a STOPGAP, not a new standard — raise back toward 70% by excluding the network shell from the denominator or adding an SSH mock. See PROGRESS.md 'COVERAGE DEBT' + README."
-          cargo llvm-cov --locked --workspace --fail-under-lines 58
+          cargo llvm-cov --locked --workspace --fail-under-lines 80 \
+            --ignore-filename-regex '(cli/src/lifecycle\.rs|io/src/server\.rs|io/src/git\.rs)'
+      # Gate 3 — reported, NOT gated. Keeps the blended trend visible without any
+      # number being load-bearing. Measured 65.51%.
+      - name: coverage — whole workspace (reported, not gated)
+        run: cargo llvm-cov --locked --workspace --summary-only
 
   # Supply chain (ADR-0004, SR/CM) — dependency review (cargo-vet) and an SBOM.
   supply-chain:

@@ -24,6 +24,21 @@ where a decision touches a control we cite the 800-53 family inline.)
 - **Immutable in substance:** to change a decision, write a *new* ADR that supersedes the
   old one and flip the old one's status to `Superseded by ADR-XXXX`. Don't rewrite history.
 - Status values: `Proposed` · `Accepted` · `Superseded` · `Deprecated`.
+- **Every ADR names its enforcer — `Verified-by:`.** What would fail if the decision
+  silently stopped being true: a test name, a CI step, or an honest `none`. An ADR that
+  asserts a property nothing checks is the failure mode this line exists to make visible —
+  ADR-0004's CM row claimed a pinned `Cargo.lock` for ~2 months while CI re-resolved freely,
+  and nothing in the log showed it. Prefer a specific, greppable name (`ci: clippy --locked`,
+  `push.rs::repoint_to_behind_home_still_pushes`) over a vague area. Use
+  `none — <why, and where it's tracked>` rather than leaving it blank or inventing a verifier;
+  `manual, live-verified YYYY-MM-DD` is legitimate for the SSH paths that can't be hermetic.
+  Partial implementation belongs here too (see ADR-0006's unbuilt `--dirty-only`).
+
+  > **Carve-out to immutability:** `Status` and `Verified-by` are *metadata about* the
+  > decision, not the decision, and both legitimately change over the ADR's life — a test
+  > added later moves `Verified-by` from `none` to a name. Editing these two lines in place
+  > is expected and is **not** a rewrite. Everything below the header — Context, Decision,
+  > Consequences — stays immutable; supersede instead.
 
 ## Template
 
@@ -32,6 +47,7 @@ where a decision touches a control we cite the 800-53 family inline.)
 - Status: Proposed | Accepted | Superseded by ADR-XXXX
 - Date: YYYY-MM-DD
 - Deciders: <names>
+- Verified-by: <test name | CI step | manual, live-verified YYYY-MM-DD | none — why>
 
 ## Context
 <forces at play, constraints, what makes this non-obvious>
@@ -70,3 +86,4 @@ where a decision touches a control we cite the 800-53 family inline.)
 | [0020](0020-onboard-attach-existing-primary-home.md) | `onboard` gains `attach` — a working copy whose primary home already exists | Accepted |
 | [0021](0021-collapse-same-server-transport-aliases-in-status.md) | Collapse same-server transport aliases into one status column | Accepted |
 | [0022](0022-default-command-interactive-stage-and-commit-review.md) | Bare `gr` offers an interactive stage-and-commit review for dirty repos | Accepted |
+| [0023](0023-coverage-gate-tiered-by-testability.md) | Coverage gate tiered by testability, not one blended workspace number | Proposed |

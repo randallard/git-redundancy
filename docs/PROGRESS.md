@@ -12,7 +12,51 @@ end-to-end (with audit logging); not yet wired to the live tenx SSH aliases. Dec
 recorded as ADRs in [`docs/adr/`](adr/README.md) — read those for the authoritative *why*;
 this doc is the working overview. See [Implementation status](#implementation-status) below.
 
-**Where we are (2026-07-08).** Bare `gr` (no subcommand) now offers an **interactive
+**Where we are (2026-08-05).** **`gr --help` is now a single-screen cheat-sheet** — clap's
+`flatten_help = true` renders *every* subcommand's options inline under the top-level help,
+plus an `after_help` documenting the bare-`gr` default (status + dirty-repo review) and the
+two standing safety promises (never auto-commit, never force a diverged branch). Motivation:
+the ADR-0006 `-a/--all-branches` scope flag was fully implemented on `push`/`status`/`sync`/
+`create` but **undiscoverable** — the old top-level help listed subcommands with no options at
+all, so "push every easy branch" read as missing when it already shipped. No behavior change,
+no new flags, no default changed (`push` still defaults to the current branch): this is
+discoverability only, one attribute on the `Cli` derive in `cli/main.rs`. Gates green — fmt,
+clippy `-D warnings`, 90 tests (32 cli · 37 core · 19 io · 2 render). **Pending Ryan's local
+review, then commit + a follow-up journal entry** (the journal convention references a real
+commit hash).
+
+Also landed 2026-08-05: **CI now actually enforces the pinned lockfile.** `--locked` added to
+`clippy`, `test`, and `cargo llvm-cov` (`.github/workflows/ci.yml`); `cargo vet` already had
+it. Previously only `cargo vet` used it, so a `Cargo.lock` that no longer satisfied the
+manifest passed CI green — ADR-0004's CM row claims "pinned `Cargo.lock`" and **nothing
+checked it**. Surfaced by a local `cargo install --path crates/cli` (no `--locked`, contrary
+to README.md:64) silently resolving clap 4.6.5 over the pinned 4.6.1. `cargo fmt` is
+deliberately excluded — it rejects the flag and resolves nothing. Kani + `cargo-cyclonedx` run
+through wrapper actions and were left alone (untested with the flag) — **open item.**
+
+**ADR honesty flow (2026-08-05, started).** An audit of the log against the code found four
+distinct drift modes: an ADR promising something never built (ADR-0006's `--dirty-only` — zero
+hits in `crates/`), an ADR asserting a property nothing enforced (ADR-0004's pinned lockfile,
+above), a CI gate no ADR ever decided (the coverage floor), and code that moved before its ADR
+(0003→0010). Two changes landed:
+- **`Verified-by:` is now part of the ADR template** (`docs/adr/README.md`) — every ADR names
+  what would fail if its decision silently stopped being true, with an explicit carve-out
+  saying `Status` and `Verified-by` are editable metadata, *not* a breach of ADR immutability.
+- **[ADR-0023](adr/0023-coverage-gate-tiered-by-testability.md) (Proposed)** — replaces the
+  blended 58% floor with three tiers: pure core ≥95% (measured **96.37%**), testable surface
+  ≥80% with the network shell excluded (measured **84.42%**), whole workspace reported but
+  ungated (**65.51%**). Net effect is a *higher* bar than the 70% that predated the stopgap;
+  the "COVERAGE DEBT" framing is resolved by it, not deferred again. **Awaiting Ryan's
+  accept — the CI job still runs the old single 58% floor until then.**
+
+**Deliberately not done yet** (deferred by agreement, not forgotten): the CI linter that
+enforces `Verified-by` on every Accepted ADR and reconciles the hand-maintained index Status
+column — held until the convention has survived a few ADRs, so it doesn't become a gate
+that gets bypassed. And the **backfill** of `Verified-by:` across ADRs 0000–0022, which is
+the actual audit and will surface the next ADR-0004-shaped hole. Also open from the audit:
+decide `--dirty-only` (build it, or supersede that slice of ADR-0006).
+
+**Where we were (2026-07-08).** Bare `gr` (no subcommand) now offers an **interactive
 stage-and-commit review** for dirty repos — [ADR-0022](adr/0022-default-command-interactive-stage-and-commit-review.md).
 After the status table prints, if any repo's current branch is dirty, `gr` offers to cycle
 through them: a diff per changed/untracked file, `[y/N/e]` to stage it (or open `$EDITOR`
@@ -25,7 +69,7 @@ clippy/fmt clean. **Implemented, reviewed in a scratch repo (never the real flee
 Ryan's local review, then a commit + follow-up journal entry** (the journal convention needs a
 real commit hash to reference).
 
-**Where we were (2026-06-22).** The lifecycle surface is **feature-complete in code, pending live
+**Where we were (2026-06-22, earlier still).** The lifecycle surface is **feature-complete in code, pending live
 verification**, for the two-box promise: **create / clone / sync / onboard / repoint**. Just
 landed and pushed — `gr onboard` (the ADR-0017 guided y/n/s/q walk + config `ignore` list) and
 `gr repoint` (ADR-0018, backup-only homes into the current topology behind a never-lose-history
@@ -128,7 +172,11 @@ Workspace: `crates/{core,io,cli}` (ADR-0002), `#![forbid(unsafe_code)]` througho
   `cli::review` is the walk itself, wired only into the no-subcommand default (`gr status`/
   `--json` untouched, still pure and scriptable). Whole-file staging only (no `git add -p`
   hunks); no auto-continue to push/sync. 6 new `assert_cmd` integration cases + property
-  tests on the parser. Reviewed against a scratch repo, not yet committed.
+  tests on the parser. Reviewed against a scratch repo; **committed in `809a456`.**
+- **Single-screen help (2026-08-05):** `flatten_help = true` + `after_help` on the `Cli`
+  derive (`cli/main.rs`) — `gr --help` lists every subcommand's options inline, so scope
+  flags like `push -a` are discoverable without `gr push --help`. Derive-driven, so new
+  flags appear automatically and can't drift out of sync.
 
 **Not yet:** *mandatory* FIPS (tenx-side `sshd`/crypto-policy — the deferred tier); the
 operational item of keeping tenx awake/reachable at day's end; a future GUI (Tauri).
@@ -229,6 +277,11 @@ No telemetry. No network access except the explicit, user-invoked push.
 ---
 
 ## 4. Command surface
+
+**Discoverability:** `gr --help` is the whole surface on one screen — clap's `flatten_help`
+renders each subcommand's options inline, and an `after_help` states the bare-`gr` default
+and the never-auto-commit / never-force promises. It's generated from the derive, so this
+section and the help output can't drift apart.
 
 ### `gr status` (default command)
 Renders a table over the configured repos (discovered within the configured roots; see §5).

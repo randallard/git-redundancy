@@ -24,10 +24,14 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: fmt
         run: cargo fmt --all -- --check
+      # `--locked` on every dependency-resolving command (ADR-0004 CM: pinned
+      # Cargo.lock). Without it CI silently re-resolves, so a lockfile that no
+      # longer satisfies the manifest passes green. `cargo fmt` is excluded — it
+      # rejects the flag and resolves nothing.
       - name: clippy
-        run: cargo clippy --all-targets -- -D warnings
+        run: cargo clippy --locked --all-targets -- -D warnings
       - name: test
-        run: cargo test --all
+        run: cargo test --locked --all
       - name: cargo-deny (licenses, bans, sources, advisories)
         uses: EmbarkStudios/cargo-deny-action@v2
         with:
@@ -76,7 +80,7 @@ jobs:
       - name: coverage (TEMP floor 58% — REVISIT, see COVERAGE DEBT)
         run: |
           echo "::warning title=COVERAGE DEBT — revisit coverage requirements::Line-coverage floor TEMPORARILY lowered 70%->58% (headline ~60%). onboard/repoint added un-mockable SSH orchestration (cli/lifecycle.rs ~23%, io/server.rs ~50%, io/git.rs ~56%). This is a STOPGAP, not a new standard — raise back toward 70% by excluding the network shell from the denominator or adding an SSH mock. See PROGRESS.md 'COVERAGE DEBT' + README."
-          cargo llvm-cov --workspace --fail-under-lines 58
+          cargo llvm-cov --locked --workspace --fail-under-lines 58
 
   # Supply chain (ADR-0004, SR/CM) — dependency review (cargo-vet) and an SBOM.
   supply-chain:

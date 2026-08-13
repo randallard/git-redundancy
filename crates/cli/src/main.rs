@@ -20,7 +20,14 @@ use std::path::{Path, PathBuf};
 #[command(
     name = "gr",
     version,
-    about = "git-redundancy: multi-repo status + push"
+    about = "git-redundancy: multi-repo status + push",
+    // Render every subcommand's options inline in `gr --help` so flags like
+    // `push -a` are discoverable without drilling into each subcommand.
+    flatten_help = true,
+    after_help = "Run with no subcommand for `status` plus an offer to stage/commit \
+                  any dirty repos it found (ADR-0022).\n\
+                  Nothing is ever auto-committed and no diverged branch is ever forced \
+                  (ADR-0006)."
 )]
 struct Cli {
     #[command(subcommand)]

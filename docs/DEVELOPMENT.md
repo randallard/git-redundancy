@@ -124,21 +124,50 @@ binaries).
 
 ## Coverage gate
 
-CI enforces a line-coverage floor:
+**Tiered by testability** ([ADR-0023](adr/0023-coverage-gate-tiered-by-testability.md)) — three
+runs, not one blended number. The same three checks CI runs:
 
 ```bash
-cargo llvm-cov --workspace --fail-under-lines 70   # the same check CI runs
+# 1. pure core (ADR-0002) — should stay near-total
+cargo llvm-cov --locked -p git-redundancy-core --fail-under-lines 95
+
+# 2. the real quality gate: everything a hermetic test can reach
+cargo llvm-cov --locked --workspace --fail-under-lines 80 \
+  --ignore-filename-regex '(cli/src/lifecycle\.rs|io/src/server\.rs|io/src/git\.rs)'
+
+# 3. reported, NOT gated — keeps the blended trend visible
+cargo llvm-cov --locked --workspace --summary-only
 ```
 
-The floor (70%) sits below the headline (~76%) on purpose: the SSH-execution paths in
-`io::server` and `create`/`clone` only run against a live server and are verified by hand, so
-they pull the number down without being a real gap.
+Measured 2026-08-13: core **96.37%**, testable surface **84.30%**, whole workspace **65.51%**.
+
+A single blended floor averaged a nearly-fully-covered pure core against SSH orchestration that
+cannot be tested hermetically, so it described neither — and the old 58% "temporary" floor hid
+the fact that the testable surface was already above the 70% bar that predated it. Splitting
+them raised the real bar rather than lowering it.
+
+**The gate-2 exclusion list is exhaustive and closed** — those three files by name, no globs.
+Adding a file to it requires a new ADR superseding 0023; that is what stops it becoming a place
+to hide untested code. Moving files *out* (by writing an SSH stub — see
+`Fixture::install_fake_ssh` in `crates/cli/tests/cli.rs`, which already fakes a home server for
+the ADR-0015 tests) is the way to raise gate 2.
 
 ## What CI runs
 
 Per [ADR-0011](adr/0011-ci-fast-gates-plus-kani-every-push.md) and ADR-0004, every push runs:
 
-- **fast gates** — `fmt --check`, `clippy -D warnings`, `cargo test`, `cargo-deny`;
+- **fast gates** — `fmt --check`, `clippy --locked -D warnings`, `cargo test --locked`,
+  `cargo-deny` (which now also enforces [ADR-0010](adr/0010-system-git-for-local-reads.md) via
+  `[bans] deny` on `git2`/`libgit2-sys`/`gix`);
 - **kani proofs** — separate cached job;
-- **coverage gate** — `cargo llvm-cov --fail-under-lines 70`;
+- **coverage gate** — the three tiered runs above (ADR-0023);
 - **supply chain** — `cargo vet --locked` + a CycloneDX SBOM artifact.
+
+Every job carries a `timeout-minutes` ceiling (gates 10, coverage 15, supply-chain 10, kani 20)
+against GitHub's 6-hour default. Warm runtimes are 12–60s, so these only trip on a real wedge.
+
+**`--locked` is on every dependency-resolving command.** Without it CI silently re-resolves and
+a `Cargo.lock` that no longer satisfies the manifest passes green — which is exactly what
+happened for two months. `cargo fmt` is excluded (it rejects the flag and resolves nothing).
+Install the binary the same way: `cargo install --path crates/cli --locked`; cargo does **not**
+default to it and has no config option to make it default ([rust-lang/cargo#8207](https://github.com/rust-lang/cargo/issues/8207)).

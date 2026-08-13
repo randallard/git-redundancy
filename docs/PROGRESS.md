@@ -145,7 +145,9 @@ gains a loop or `llvm-cov` wedges.
 
 ---
 
-## BACKLOG — next steps (start here after a cleared context)
+## BACKLOG — next steps
+
+*(Start here after a cleared context.)*
 
 The single consolidated list. Anything not written here does not exist: this section was
 created 2026-08-13 after noticing the running backlog lived only in chat and in scattered

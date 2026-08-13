@@ -150,7 +150,10 @@ terminal the cells are colorized; disable with `--no-color` (also auto-off when 
 `NO_COLOR` is set).
 
 Flags: `-a`/`--all-branches` (one row per local branch), `--remote <name>` (single column),
+`--dirty-only` (only repos with a dirty working tree — staged, unstaged or untracked),
 `--offline` (skip the server query), `--json` (machine-readable output).
+
+`gr --help` lists every subcommand's options on one screen, so you rarely need `gr <cmd> --help`.
 
 Drill into one repo (by directory **or** home name) — every branch, with the action `sync`
 would take:
@@ -344,15 +347,19 @@ safety invariant; CI runs the gates + Kani + a coverage gate + supply-chain chec
 (`cargo-deny`, `cargo-vet`, SBOM) on every push. Not yet: the *mandatory* (server-side) FIPS
 tier. A GUI is a possible later phase (Tauri, reusing the Rust core — `--json` is the seam).
 
-> ⚠️ **Coverage debt — to revisit.** The CI line-coverage floor is **temporarily lowered to
-> 58%** (from 70%). `onboard` (ADR-0017) and `repoint` (ADR-0018) added a lot of SSH
-> orchestration that only runs against a live server and isn't hermetically testable without a
-> mock, dragging the headline to ~60% (`cli/lifecycle.rs` ~23%, `io/server.rs` ~50%; the pure
-> core stays 94–100%). This floor is a **stopgap, not a new standard** — the plan is to raise it
-> back toward 70% by excluding the network shell from the denominator or adding an SSH stub. The
-> coverage CI job emits a loud warning each run, and it's tracked in
-> [`docs/PROGRESS.md`](docs/PROGRESS.md) under "COVERAGE DEBT". `onboard`/`repoint` themselves
-> also still owe a **live round-trip** (hermetic + review only so far).
+> **Coverage is tiered by testability**
+> ([ADR-0023](docs/adr/0023-coverage-gate-tiered-by-testability.md), 2026-08-13) — pure core
+> **≥95%** (at 96.37%), the testable surface with the un-mockable network shell excluded
+> **≥80%** (at 84.30%), and the whole workspace reported but *not* gated (65.51%). This
+> **replaces** the earlier "coverage debt" stopgap, which had temporarily dropped a single
+> blended floor to 58%. Measuring the two surfaces separately showed the debt was a
+> *denominator* problem, not a quality one: the testable code was already above the 70% bar that
+> predated the stopgap. The bar is now higher than either, and the loud per-run CI warning is
+> retired. The gate-2 exclusion list is closed — extending it requires a new ADR.
+>
+> Still owed: `onboard` (ADR-0017) and `repoint` (ADR-0018) have had **no live round-trip** —
+> only their guard paths are covered. Tracked in
+> [`docs/PROGRESS.md`](docs/PROGRESS.md#backlog--next-steps).
 
 ## License
 

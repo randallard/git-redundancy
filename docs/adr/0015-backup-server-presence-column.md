@@ -2,9 +2,16 @@
 - Status: Accepted
 - Date: 2026-06-19
 - Deciders: Ryan
-- Verified-by: `none` — no hermetic test covers the `Bkp` column; it rests on live use against the tenx
-  primary+backup pair. A hermetic case needs a second fake server. *(Gap surfaced by the
-  2026-08-13 backfill.)*
+- Verified-by: `cli tests:` `status_backup_field_is_ok_when_the_home_exists_on_the_backup`,
+  `status_backup_field_is_miss_when_the_home_is_absent_from_the_backup`,
+  `status_backup_field_is_unknown_when_the_backup_is_unreachable`,
+  `status_omits_the_backup_column_entirely_when_no_backup_is_configured` — all four documented
+  states. Hermetic via a stub `ssh` on `PATH` (`Fixture::install_fake_ssh`) that runs the listing
+  command locally, so both "servers" are temp directories: no network, no second machine. Each
+  assertion was **mutation-tested** (break the fixture → the test fails), so none passes
+  vacuously. Assertions read the `--json` `backup` field, not the table: the table's untracked
+  column is also headed `?` and could not distinguish an unreachable backup from a file count.
+  *(Was `none` — gap surfaced by the 2026-08-13 backfill and closed the same day.)*
 
 ## Context
 The fleet now has two home servers: a **primary** (where clients push) and a **backup** that the

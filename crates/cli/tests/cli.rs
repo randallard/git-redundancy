@@ -21,6 +21,7 @@ struct Fixture {
     dev: PathBuf,
     bare: PathBuf,
     workrepo: PathBuf,
+    bin: PathBuf,
 }
 
 impl Fixture {
@@ -35,7 +36,8 @@ impl Fixture {
         let dev = root.join("dev");
         let bare = root.join("home.git");
         let workrepo = dev.join("myrepo");
-        for d in [&home, &dev] {
+        let bin = root.join("bin");
+        for d in [&home, &dev, &bin] {
             std::fs::create_dir_all(d).unwrap();
         }
 
@@ -48,6 +50,7 @@ impl Fixture {
             dev,
             bare,
             workrepo,
+            bin,
         };
 
         fx.git(&fx.root, &["init", "--bare", fx.bare.to_str().unwrap()]);
@@ -120,13 +123,53 @@ impl Fixture {
     /// The `gr` binary, with isolated config/state/home.
     fn gr(&self) -> Command {
         let mut cmd = Command::cargo_bin("gr").unwrap();
+        // `bin` is prepended to PATH but starts empty, so behaviour is unchanged
+        // unless a test calls `install_fake_ssh` (ADR-0015 / ADR-0012 coverage).
+        let path = match std::env::var_os("PATH") {
+            Some(p) => format!("{}:{}", self.bin.display(), p.to_string_lossy()),
+            None => self.bin.display().to_string(),
+        };
         cmd.env("XDG_CONFIG_HOME", &self.xdg_config)
             .env("XDG_STATE_HOME", &self.xdg_state)
             .env("HOME", &self.home)
+            .env("PATH", path)
             .env("GIT_CONFIG_GLOBAL", "/dev/null")
             .env("GIT_CONFIG_SYSTEM", "/dev/null")
             .env("GIT_CONFIG_NOSYSTEM", "1");
         cmd
+    }
+
+    /// Install a stub `ssh` earlier on PATH than the real one, so the "home
+    /// server" becomes an ordinary local directory of `*.git` dirs.
+    ///
+    /// `gr` reaches a server only via `ssh <alias> "ls -d <root>/*.git ..."`
+    /// (io::inventory::list_homes). The stub drops the `-o` option pairs, takes
+    /// the next argument as the alias, and runs the remaining command **locally**
+    /// — so a listing of a real temp dir is a faithful stand-in for the real
+    /// thing, with no network and no second machine.
+    ///
+    /// Aliases named in `GR_FAKE_SSH_UNREACHABLE` (colon-separated) fail like an
+    /// unreachable host instead, which is how the `?` states are exercised.
+    fn install_fake_ssh(&self) {
+        let script = "#!/bin/sh\n\
+             while [ \"$1\" = \"-o\" ]; do shift 2; done\n\
+             alias=\"$1\"; shift\n\
+             case \":$GR_FAKE_SSH_UNREACHABLE:\" in\n\
+             \x20 *\":$alias:\"*) echo \"ssh: connect to host $alias: Connection refused\" >&2; exit 255 ;;\n\
+             esac\n\
+             exec /bin/sh -c \"$*\"\n";
+        let p = self.bin.join("ssh");
+        std::fs::write(&p, script).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+    }
+
+    /// Create a server-side "home" (`<root>/<name>.git`) for the fake server.
+    fn make_home(&self, root: &Path, name: &str) {
+        std::fs::create_dir_all(root.join(format!("{name}.git"))).unwrap();
     }
 }
 
@@ -165,6 +208,118 @@ fn status_offline_shows_lifecycle_column_unknown() {
                 .and(predicate::str::contains("?"))
                 .and(predicate::str::contains("myrepo")),
         );
+}
+
+// ---------------------------------------------------------------------------
+// ADR-0015 — the `[backup]` server and the `Bkp` presence column.
+//
+// These were the ADR's `Verified-by: none` until 2026-08-13: the column rested
+// entirely on live use against the real tenx primary+backup pair. The stub `ssh`
+// (see `install_fake_ssh`) makes both servers ordinary temp directories, so all
+// four documented states are now covered hermetically.
+// ---------------------------------------------------------------------------
+
+/// Config wiring `[server]` + optionally `[backup]` at fake-ssh-backed roots.
+fn backup_config(fx: &Fixture, primary: &Path, backup: Option<&Path>) -> String {
+    let mut s = format!(
+        "roots = [\"{}\"]\n[transport]\norder = [\"data-lan\", \"data\"]\n\
+         [server]\nroot = \"{}\"\naliases = [\"fake-primary\"]\n",
+        fx.dev.display(),
+        primary.display(),
+    );
+    if let Some(b) = backup {
+        s.push_str(&format!(
+            "[backup]\nroot = \"{}\"\naliases = [\"fake-backup\"]\n",
+            b.display()
+        ));
+    }
+    s
+}
+
+// Assertions go through `--json`, not the rendered table: the table's untracked
+// column is *also* headed `?`, so matching `?` in the table cannot distinguish an
+// unreachable backup from an untracked-file count. The JSON `backup` field is the
+// exact contract ADR-0015 specifies.
+
+#[test]
+fn status_backup_field_is_ok_when_the_home_exists_on_the_backup() {
+    let fx = Fixture::new();
+    fx.install_fake_ssh();
+    let (primary, backup) = (fx.root.join("srv"), fx.root.join("bkp"));
+    // The fixture's remotes point at `<root>/home.git`, so the home name is `home`.
+    fx.make_home(&primary, "home");
+    fx.make_home(&backup, "home");
+    fx.write_config(&backup_config(&fx, &primary, Some(&backup)));
+
+    fx.gr()
+        .args(["status", "--json"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"backup\": \"ok\""));
+}
+
+#[test]
+fn status_backup_field_is_miss_when_the_home_is_absent_from_the_backup() {
+    let fx = Fixture::new();
+    fx.install_fake_ssh();
+    let (primary, backup) = (fx.root.join("srv"), fx.root.join("bkp"));
+    fx.make_home(&primary, "home");
+    // Backup exists and is reachable, but this repo was never mirrored to it —
+    // the exact redundancy gap ADR-0015 exists to surface. The backup must be
+    // non-empty, or "reachable but missing" would be indistinguishable from
+    // "listing failed".
+    fx.make_home(&backup, "some-other-repo");
+    fx.write_config(&backup_config(&fx, &primary, Some(&backup)));
+
+    fx.gr()
+        .args(["status", "--json"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"backup\": \"miss\""));
+}
+
+#[test]
+fn status_backup_field_is_unknown_when_the_backup_is_unreachable() {
+    let fx = Fixture::new();
+    fx.install_fake_ssh();
+    let (primary, backup) = (fx.root.join("srv"), fx.root.join("bkp"));
+    fx.make_home(&primary, "home");
+    // The home IS present on the backup: if unreachability were mishandled this
+    // would read `ok`, so the test distinguishes `?` from a stale success.
+    fx.make_home(&backup, "home");
+    fx.write_config(&backup_config(&fx, &primary, Some(&backup)));
+
+    fx.gr()
+        .env("GR_FAKE_SSH_UNREACHABLE", "fake-backup")
+        .args(["status", "--json"])
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("\"backup\": \"?\"")
+                .and(predicate::str::contains("\"backup\": \"ok\"").not()),
+        );
+}
+
+#[test]
+fn status_omits_the_backup_column_entirely_when_no_backup_is_configured() {
+    let fx = Fixture::new();
+    fx.install_fake_ssh();
+    let primary = fx.root.join("srv");
+    fx.make_home(&primary, "home");
+    fx.write_config(&backup_config(&fx, &primary, None));
+
+    // No `[backup]` → no JSON field at all, and no `Bkp` column in the table.
+    fx.gr()
+        .args(["status", "--json"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"backup\"").not());
+
+    fx.gr()
+        .arg("status")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Bkp").not());
 }
 
 #[test]

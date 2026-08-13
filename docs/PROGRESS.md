@@ -117,9 +117,18 @@ gains a loop or `llvm-cov` wedges.
   transitively) and `gix`. The mechanism was proven to *fire*, not merely parse: a throwaway
   config banning `serde` (which is in the tree) produced `error[banned]` + exit 2. Residual:
   `gix-*` sub-crates aren't individually banned; the umbrella `gix` is the realistic path in.
-- **[ADR-0015](adr/0015-backup-server-presence-column.md) (`Bkp` column) and
-  [ADR-0020](adr/0020-onboard-attach-existing-primary-home.md) (onboard attach) have no
-  hermetic test at all** — both rest on live use only.
+- ~~**[ADR-0015](adr/0015-backup-server-presence-column.md) (`Bkp` column)** has no hermetic
+  test~~ — **CLOSED 2026-08-13.** Four tests cover all four documented states (`ok` / `miss` /
+  `?` / no column). The enabler is a **stub `ssh` on `PATH`** (`Fixture::install_fake_ssh`)
+  that strips the `-o` pairs and runs the listing command *locally*, so a "home server" is just
+  a temp directory of `*.git` dirs — no network, no second machine. Each assertion was
+  **mutation-tested** (break the fixture → the test must fail); all four did. Assertions read
+  the `--json` `backup` field rather than the table, because the table's untracked column is
+  *also* headed `?`. **The stub is reusable** — it unblocks hermetic coverage for any
+  server-touching path (ADR-0012/0013/0016/0017/0018/0020), which were previously
+  live-verify-only.
+- **[ADR-0020](adr/0020-onboard-attach-existing-primary-home.md) (onboard attach) still has no
+  hermetic test** — rests on live use only. Now unblocked by the stub above.
 - **[ADR-0017](adr/0017-onboard-guided-walk-and-ignore-list.md) /
   [0018](adr/0018-repoint-backup-only-homes-into-current-topology.md) remain not
   live-verified**; only their guard paths are covered. Unchanged from before, now stated in

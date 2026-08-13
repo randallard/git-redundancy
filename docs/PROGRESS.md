@@ -342,7 +342,8 @@ Columns:
 - **Scope:** default = current branch per repo; `-a` / `--all-branches` = one row per
   local branch. **`gr status <repo>`** = one repo, all branches, with the `sync` action.
 - Flags: `--remote <name>` (limit columns), `--offline` (skip server query), `--json`
-  (machine output), `--no-color`. *(`--dirty-only` from ADR-0006 is not yet built.)*
+  (machine output), `--no-color`, `--dirty-only` (fleet view only — show just repos with a
+  dirty working tree; home-only rows are suppressed since they have no working tree here).
 
 ### `gr push`
 Push committed work that is **easy** (fast-forwardable) only.

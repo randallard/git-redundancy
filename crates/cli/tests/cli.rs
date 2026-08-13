@@ -168,6 +168,37 @@ fn status_offline_shows_lifecycle_column_unknown() {
 }
 
 #[test]
+fn status_dirty_only_hides_clean_repos_and_shows_dirty_ones() {
+    // ADR-0006 `--dirty-only`. The fixture repo starts clean, so it must be
+    // absent; dirtying the tree must bring it back.
+    let fx = Fixture::new();
+    fx.gr()
+        .args(["status", "--offline", "--dirty-only"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("myrepo").not());
+
+    fx.write("a.txt", "one\ntwo\nthree\nfour\n");
+    fx.gr()
+        .args(["status", "--offline", "--dirty-only"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("myrepo"));
+}
+
+#[test]
+fn status_dirty_only_counts_untracked_files_as_dirty() {
+    // Untracked-only is still "not fully backed up" — it must not read as clean.
+    let fx = Fixture::new();
+    fx.write("brand-new.txt", "never added\n");
+    fx.gr()
+        .args(["status", "--offline", "--dirty-only"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("myrepo"));
+}
+
+#[test]
 fn status_flags_other_branches_needing_attention() {
     let fx = Fixture::new();
     // current branch is main; a second, un-backed-up branch should raise +1⚠.

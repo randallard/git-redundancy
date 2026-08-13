@@ -64,6 +64,10 @@ struct StatusArgs {
     /// Limit the table to a single remote.
     #[arg(long)]
     remote: Option<String>,
+    /// Show only repos with a dirty working tree (staged, unstaged, or untracked).
+    /// Fleet view only — a `<REPO>` detail view is already one repo.
+    #[arg(long)]
+    dirty_only: bool,
     /// Show each transport alias as its own column instead of collapsing a
     /// same-server failover group (`data-lan`/`data`) into one (ADR-0021).
     #[arg(long)]
@@ -165,6 +169,7 @@ fn main() -> Result<()> {
                 repo: None,
                 all_branches: false,
                 remote: None,
+                dirty_only: false,
                 by_remote: false,
                 offline: false,
                 json: false,
@@ -179,6 +184,7 @@ fn main() -> Result<()> {
             repo: None,
             all_branches: false,
             remote: None,
+            dirty_only: false,
             by_remote: false,
             offline: args.offline,
             json: false,
@@ -291,6 +297,10 @@ fn run_status(args: &StatusArgs) -> Result<()> {
                 args,
                 &mut rows,
             )?,
+            None if args.dirty_only => {
+                // A home-only repo has no working tree here, so it can never be
+                // dirty — suppressed rather than shown as a permanently-clean row.
+            }
             None => {
                 // home-only repo (only present when the home side is known).
                 let mut row = render::Row::new(p.home_name.clone(), "(home)".into(), false);
@@ -363,6 +373,12 @@ fn build_local_rows(
 ) -> Result<()> {
     let current = git::current_branch(repo)?;
     let wt = git::working_tree(repo)?;
+    // ADR-0006 `--dirty-only`: drop clean repos entirely, every branch row with
+    // them. Checked before `refresh_columns` so a filtered-out repo costs no
+    // network round-trip either.
+    if args.dirty_only && !(wt.has_uncommitted_changes() || wt.untracked > 0) {
+        return Ok(());
+    }
     let repo_remotes: BTreeSet<String> = git::remotes(repo)?.into_iter().collect();
     if !args.offline {
         refresh_columns(repo, shown, &repo_remotes);

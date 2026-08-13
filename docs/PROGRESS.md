@@ -7,10 +7,16 @@
 > Companion to `infra-notes/GIT_REPOS_PLAN.md`, which documents the bare-repo server,
 > the `data` (Tailscale) / `data-lan` (LAN) remotes, and the server-side bundle backups.
 
-**Status:** first working increment implemented & tested. `gr status` and `gr push` work
-end-to-end (with audit logging); not yet wired to the live tenx SSH aliases. Decisions are
-recorded as ADRs in [`docs/adr/`](adr/README.md) — read those for the authoritative *why*;
-this doc is the working overview. See [Implementation status](#implementation-status) below.
+> **Resuming after a cleared context? Start at [BACKLOG — next steps](#backlog--next-steps).**
+> That is the single consolidated to-do list; everything else in this file is history and
+> reference. The first item there is the only one where data is actually at risk.
+
+**Status:** in daily use against the live tenx fleet. `gr status` / `push` / `sync` / `create`
+/ `clone` / `onboard` / `repoint` all implemented; SSH transport wired (ADR-0009) and CI green
+(last: run `31666395204`). Decisions are recorded as ADRs in [`docs/adr/`](adr/README.md) —
+read those for the authoritative *why*, and each one's `Verified-by:` header line for what
+actually enforces it. This doc is the working overview; see
+[Implementation status](#implementation-status) below.
 
 **Where we are (2026-08-05).** **`gr --help` is now a single-screen cheat-sheet** — clap's
 `flatten_help = true` renders *every* subcommand's options inline under the top-level help,
@@ -137,10 +143,66 @@ gains a loop or `llvm-cov` wedges.
   unenforced** — `crates/core/Cargo.toml` has an empty `[dependencies]`, so the core cannot do
   IO today, but nothing fails if a dep is added later.
 
-**Still deferred** (by agreement, not forgotten): the **CI linter** that would enforce a
-non-empty `Verified-by` on every Accepted ADR and reconcile the hand-maintained index Status
-column — held until the convention survives a few ADRs, so it doesn't become a gate that gets
-bypassed on sight.
+---
+
+## BACKLOG — next steps (start here after a cleared context)
+
+The single consolidated list. Anything not written here does not exist: this section was
+created 2026-08-13 after noticing the running backlog lived only in chat and in scattered
+journal `Next:` sections — the exact "a control that exists in the record and not in reality"
+failure this effort has been fixing. **Keep it current; delete items when done rather than
+letting them rot.**
+
+**Operational — do this first, it is the only item where data is actually at risk**
+- [ ] **Three repos have no home remote and are not backed up at all: `ecf-data`,
+      `get-hearings`, `spaces-game-data`.** Seen in `gr push -a --dry-run` as "no configured
+      home remote on this repo". `gr onboard` is the guided walk; it is **interactive and
+      provisions on the server**, so it needs Ryan's hands. (`mix-a-hoot-n-hollar` was in this
+      set on 2026-06-30 — confirm whether it still is.) *Nothing else in this backlog risks
+      losing work; this does.*
+- [ ] Keep the home remotes current — `gr push`. The `data` side trailed `origin` by several
+      commits through this session.
+
+**Testing / verification**
+- [ ] **[ADR-0020](adr/0020-onboard-attach-existing-primary-home.md) has no hermetic test.**
+      Cheapest remaining item — the stub `ssh` (`Fixture::install_fake_ssh`, added 2026-08-13)
+      already makes a fake server trivial. Model it on the four ADR-0015 tests.
+- [ ] **[ADR-0017](adr/0017-onboard-guided-walk-and-ignore-list.md) /
+      [0018](adr/0018-repoint-backup-only-homes-into-current-topology.md) are not
+      live-verified** — only their guard paths are covered. Either do the live round-trip
+      (`--dry-run` first, then a throwaway repo, never the original 7) *or* use the stub to
+      cover the walk hermetically. The stub makes the second option newly viable.
+- [ ] **[ADR-0002](adr/0002-functional-core-imperative-shell.md) is unenforced.**
+      `crates/core/Cargo.toml` has an empty `[dependencies]` so the core cannot do IO today,
+      but nothing fails if a dep is added. A `cargo-deny`-style check or a test asserting the
+      core's dependency list stays empty would close it, mirroring the ADR-0010 fix.
+- [ ] Raise ADR-0023's gate 2 by moving files out of the closed exclusion list — needs an SSH
+      stub for `lifecycle.rs`/`server.rs`/`git.rs`. The `install_fake_ssh` stub is the seed of
+      exactly that. **Extending the exclusion list requires a new ADR superseding 0023.**
+
+**Process**
+- [ ] **The `Verified-by` CI linter** — enforce a non-empty `Verified-by` on every `Accepted`
+      ADR and reconcile the hand-maintained index Status column in `docs/adr/README.md`
+      (two sources of truth for one field today). **Deliberately deferred** until the
+      convention has survived a few ADRs, so it doesn't become a gate that gets bypassed on
+      sight. Revisit once a few more ADRs have been written under it.
+- [ ] **Seven ADRs still carry an honest `none` / "Not enforced" / "Not live-verified":**
+      **0000, 0002, 0007, 0008, 0017, 0018, 0020** (0010 and 0015 were closed 2026-08-13).
+      Regenerate the list with:
+      ``grep -l 'Verified-by: `none`\|Not enforced\|Not live-verified' docs/adr/0*.md``
+      Some are legitimately unverifiable in CI and should stay `none` — 0008 is an environment
+      assumption, 0007 is a future phase, 0000 is the process ADR itself. The actionable ones
+      are 0002, 0017, 0018, 0020 (all listed above). *Note 0005/0009 are `manual,
+      live-verified`, which is a real verifier, not a gap.*
+- [ ] `--locked` on the Kani step is **deliberately not added** — the lockfile invariant is
+      already enforced by `clippy --locked` + `test --locked` in fast gates, and verifying the
+      wrapper action's flag support needs a full local Kani/CBMC install. Revisit only if that
+      reasoning stops holding. `cargo-cyclonedx` has no such flag upstream at all.
+
+**Known issues** — see §7b below (stale tracking refs after repoint; `gr create` from a
+subdirectory). Both still open.
+
+---
 
 **Where we were (2026-07-08).** Bare `gr` (no subcommand) now offers an **interactive
 stage-and-commit review** for dirty repos — [ADR-0022](adr/0022-default-command-interactive-stage-and-commit-review.md).

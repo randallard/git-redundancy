@@ -112,9 +112,11 @@ gains a loop or `llvm-cov` wedges.
    all** (installed it and checked).
 
 **Gaps the backfill surfaced** (each now written into the ADR that owns it, not just here):
-- **[ADR-0010](adr/0010-system-git-for-local-reads.md) is unenforced.** `Cargo.lock` has 0 hits
-  for `gix`/`git2`/`libgit2` today, but `deny.toml` has no `[bans] deny` entry — re-introducing
-  libgit2 would pass CI green. Cheapest real fix on this list.
+- ~~**[ADR-0010](adr/0010-system-git-for-local-reads.md) is unenforced.**~~ **CLOSED
+  2026-08-13** — `deny.toml` `[bans] deny` now names `git2`, `libgit2-sys` (so it can't arrive
+  transitively) and `gix`. The mechanism was proven to *fire*, not merely parse: a throwaway
+  config banning `serde` (which is in the tree) produced `error[banned]` + exit 2. Residual:
+  `gix-*` sub-crates aren't individually banned; the umbrella `gix` is the realistic path in.
 - **[ADR-0015](adr/0015-backup-server-presence-column.md) (`Bkp` column) and
   [ADR-0020](adr/0020-onboard-attach-existing-primary-home.md) (onboard attach) have no
   hermetic test at all** — both rest on live use only.

@@ -32,6 +32,16 @@ allow = [
 [bans]
 multiple-versions = "warn"
 wildcards = "warn"
+# ADR-0010 enforcement. The decision — system `git` for local reads AND network
+# ops, no C in the trust base — was true only by luck until 2026-08-13: nothing
+# failed if libgit2 came back. These entries are what make it a gate.
+# `git2`/`libgit2-sys` are the C binding ADR-0003 already rejected; `gix` is the
+# pure-Rust gitoxide that ADR-0003 originally chose and ADR-0010 superseded.
+deny = [
+    { crate = "git2", reason = "ADR-0010: no libgit2 in the trust base — system `git` handles reads and network ops" },
+    { crate = "libgit2-sys", reason = "ADR-0010: the C library behind git2; banned at the -sys crate so it cannot arrive transitively" },
+    { crate = "gix", reason = "ADR-0010 (superseding ADR-0003): one git code path, and it is system `git`" },
+]
 
 [sources]
 unknown-registry = "deny"

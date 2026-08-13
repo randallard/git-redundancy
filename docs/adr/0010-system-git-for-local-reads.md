@@ -2,10 +2,14 @@
 - Status: Accepted
 - Date: 2026-06-17
 - Deciders: Ryan
-- Verified-by: `ci: fast gates` only indirectly — `Cargo.lock` has **0** hits for `gix`/`git2`/`libgit2`
-  today. **Not enforced:** `deny.toml` has no `[bans] deny` entry for them, so re-introducing
-  libgit2 would pass CI green. Candidate fix: add them to `[bans] deny`. *(Gap surfaced by the
-  2026-08-13 backfill.)*
+- Verified-by: `ci: fast gates` → `cargo-deny` `[bans] deny` in `deny.toml` — `git2`,
+  `libgit2-sys` and `gix` are explicitly banned, so re-introducing libgit2 (directly *or*
+  transitively, hence the `-sys` entry) fails the build. The ban mechanism was proven to fire,
+  not just parse: a throwaway config banning `serde` (which *is* in the tree) produced
+  `error[banned]` and exit 2. *(Was unenforced and true-by-luck from 2026-06-17 until
+  2026-08-13 — the gap the `Verified-by` backfill surfaced, now closed.)*
+  **Residual:** `gix-*` sub-crates are not individually banned; the umbrella `gix` is the
+  realistic arrival path.
 - Supersedes: [ADR-0003](0003-git-backend-hybrid.md)
 
 ## Context
